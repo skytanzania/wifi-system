@@ -108,6 +108,47 @@ class Api {
     return u.replace(queryParameters: params);
   }
 
+  /// One HTTP call that follows redirects itself (the website answers 301 for "api.php" → "api" etc.).
+  /// Dart does not follow redirects for POST, and may drop headers on GET redirects — so the request is
+  /// sent again to the new address with the same method, headers and body, and that address is remembered.
+  Future<http.Response> _call(String method, Uri u, [String? body]) async {
+    var target = u;
+    for (var hop = 0; hop < 5; hop++) {
+      final req = http.Request(method, target)
+        ..followRedirects = false
+        ..headers.addAll(_headers);
+      if (body != null) req.body = body;
+      final r = await http.Response.fromStream(await req.send());
+      final loc = r.headers['location'];
+      if (r.statusCode >= 300 && r.statusCode < 400 && loc != null && loc.isNotEmpty) {
+        var next = target.resolve(loc);
+        // keep our parameters (r=…, page=…) if the redirect lost them
+        if (next.queryParameters['r'] == null && target.queryParameters.isNotEmpty) {
+          next = next.replace(queryParameters: {...target.queryParameters, ...next.queryParameters});
+        }
+        await _learnBase(next);
+        target = next;
+        continue;
+      }
+      return r;
+    }
+    throw ApiException('The server keeps redirecting. Check the server address.', code: 'redirect_loop');
+  }
+
+  /// Remember the address the server redirected to (only the address — never the route parameters).
+  Future<void> _learnBase(Uri u) async {
+    // only an address that is still the API (…/api.php or …/api), never a web page
+    if (!RegExp(r'/api(\.php)?/?$').hasMatch(u.path)) return;
+    final nb = Uri(scheme: u.scheme, host: u.host, port: u.hasPort ? u.port : null, path: u.path).toString();
+    if (nb != base && nb.startsWith('http')) {
+      try {
+        await setBase(nb);
+      } catch (_) {
+        base = nb;
+      }
+    }
+  }
+
   Map<String, String> get _headers => {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -121,6 +162,8 @@ class Api {
       r = await call().timeout(const Duration(seconds: 60));
     } on TimeoutException {
       throw ApiException('The server is taking too long. Check your internet and try again.', code: 'timeout');
+    } on ApiException {
+      rethrow;
     } catch (_) {
       throw ApiException('No internet connection. Check your mobile data or WiFi and try again.', code: 'network');
     }
@@ -129,7 +172,12 @@ class Api {
       final d = jsonDecode(utf8.decode(r.bodyBytes));
       j = d is Map<String, dynamic> ? d : <String, dynamic>{'ok': false, 'message': 'Unexpected answer from the server.'};
     } catch (_) {
-      throw ApiException('Unexpected answer from the server (HTTP ${r.statusCode}).', code: 'bad_response', status: r.statusCode);
+      throw ApiException(
+          r.statusCode == 404
+              ? 'api.php was not found on the server (HTTP 404). Upload api.php next to index.php.'
+              : 'Unexpected answer from the server (HTTP ${r.statusCode}). Try again in a moment.',
+          code: 'bad_response',
+          status: r.statusCode);
     }
     final msg = (j['message'] is String ? j['message'] as String : null) ?? 'Something went wrong (HTTP ${r.statusCode}).';
     if (r.statusCode == 401 && !route.startsWith('auth/login') && !route.startsWith('auth/register')) {
@@ -152,7 +200,7 @@ class Api {
 
   /// GET → the full JSON answer (used for live routes).
   Future<Map<String, dynamic>> raw(String route, [Map<String, dynamic>? q]) =>
-      _send(route, () => http.get(uri(route, q), headers: _headers));
+      _send(route, () => _call('GET', uri(route, q)));
 
   /// GET → `data` (throws ApiException when ok = false).
   Future<dynamic> get(String route, [Map<String, dynamic>? q]) async {
@@ -196,7 +244,7 @@ class Api {
 
   /// POST → the full JSON answer.
   Future<Map<String, dynamic>> postRaw(String route, [Map<String, dynamic>? body]) =>
-      _send(route, () => http.post(uri(route), headers: _headers, body: jsonEncode(body ?? <String, dynamic>{})));
+      _send(route, () => _call('POST', uri(route), jsonEncode(body ?? <String, dynamic>{})));
 
   /// POST a website action → ActionResult (ok / type / message). Business errors do not throw.
   Future<ActionResult> post(String route, [Map<String, dynamic>? body]) async {

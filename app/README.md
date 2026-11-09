@@ -27,3 +27,15 @@ flutter build apk --release  # build/app/outputs/flutter-apk/app-release.apk
 
 Flutter 3.38.x (same as `.github/workflows/build-apk.yml`). Code: `lib/api.dart` (API client), `lib/ui.dart` (theme + shared widgets),
 `lib/main.dart` (start, sign-in state), `lib/screens/*.dart` (screens).
+
+## Permanent signing key
+
+Release builds are signed with the SKY WIFI upload key (alias `skywifi`, valid until 2056) from the repository secrets
+`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+The workflow stops if an APK is signed with any other key.
+
+- SHA-256: `A0:8C:15:7F:C4:F7:52:61:20:8E:2E:FD:31:0B:A6:F4:29:20:89:C4:4B:C7:9F:10:C0:77:AC:CB:5E:3B:AD:6E`
+- SHA-1: `40:59:3E:CB:D0:27:89:A9:5B:AE:A0:D0:50:71:96:38:33:5F:71:7C`
+
+The keystore file itself is never in this repository (it is public). Keep the `.jks` file and its password in a safe place —
+without them no update of the app can be published.

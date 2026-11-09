@@ -2,7 +2,7 @@ name: Build SKY WIFI APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, mobile-app ]
     paths: [ 'app/**', '.github/workflows/build-apk.yml' ]
   pull_request:
     paths: [ 'app/**', '.github/workflows/build-apk.yml' ]
@@ -87,6 +87,12 @@ jobs:
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           CERT=$("$APKSIGNER" verify --print-certs "$APK")
           echo "$CERT"
+          # The permanent SKY WIFI upload key (app/README.md). Any other key = wrong secrets.
+          EXPECTED="a08c157fc4f75261208e2efd310ba6f4292089c44bc79f10c077accb5e3bad6e"
+          SHA=$(echo "$CERT" | grep -m1 'SHA-256 digest:' | sed 's/.*SHA-256 digest: *//')
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ] && [ "$SHA" != "$EXPECTED" ]; then
+            echo "::error::The APK is signed with a different key ($SHA) — check the ANDROID_KEYSTORE_* secrets."; exit 1
+          fi
           if echo "$CERT" | grep -q "CN=Android Debug"; then
             {
               echo "### ⚠️ APK signed with a temporary debug key"
@@ -94,7 +100,13 @@ jobs:
               echo "Uninstall the old SKY WIFI app before installing this APK. Add the 4 \`ANDROID_KEYSTORE_*\` / \`ANDROID_KEY_*\` secrets so every build uses one permanent key."
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "### ✅ APK signed with the permanent release key (version code $BUILD_NUMBER)" >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### ✅ APK signed with the permanent SKY WIFI key"
+              echo ""
+              echo "- Version code: \`$BUILD_NUMBER\`"
+              echo "- Signing key SHA-256: \`$SHA\`"
+              echo "- Installs as an update over every earlier build signed with this key."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload APK

@@ -506,9 +506,9 @@ class PagedListState extends State<PagedList> {
   }
 
   @override
-  void didUpdateWidget(covariant PagedList old) {
-    super.didUpdateWidget(old);
-    if (old.route != widget.route || old.query.toString() != widget.query.toString()) reload();
+  void didUpdateWidget(covariant PagedList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.route != widget.route || oldWidget.query.toString() != widget.query.toString()) reload();
   }
 
   @override

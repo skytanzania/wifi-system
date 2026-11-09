@@ -1,0 +1,281 @@
+// Clients: online users (disconnect / add time / block), blocked devices, customers
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../api.dart';
+import '../ui.dart';
+
+class ClientsTab extends StatefulWidget {
+  const ClientsTab({super.key});
+  @override
+  State<ClientsTab> createState() => _ClientsTabState();
+}
+
+class _ClientsTabState extends State<ClientsTab> with SingleTickerProviderStateMixin {
+  late final TabController _tc = TabController(length: 3, vsync: this);
+  @override
+  void dispose() {
+    _tc.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(children: [
+        TabBar(controller: _tc, tabs: const [Tab(text: 'Online now'), Tab(text: 'Customers'), Tab(text: 'Blocked')]),
+        Expanded(child: TabBarView(controller: _tc, children: const [SessionsView(), CustomersView(), BlockedView()])),
+      ]);
+}
+
+class SessionsView extends StatefulWidget {
+  const SessionsView({super.key});
+  @override
+  State<SessionsView> createState() => _SessionsViewState();
+}
+
+class _SessionsViewState extends State<SessionsView> with AutomaticKeepAliveClientMixin {
+  final _k = GlobalKey<PagedListState>();
+  String _q = '';
+  Map<String, dynamic> _metrics = {};
+  Timer? _t;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _live();
+    _t = Timer.periodic(const Duration(seconds: 15), (_) => _live());
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _live() async {
+    try {
+      final j = await Api.I.raw('sessions/metrics');
+      if (mounted && j['ok'] == true) setState(() => _metrics = j);
+    } catch (_) {}
+  }
+
+  Future<void> _menu(Map<String, dynamic> s) async {
+    final mac = toStr(s['mac']);
+    await actionSheet(context, toStr(s['code'], mac), [
+      (Icons.more_time, 'Add / remove time', C.green, () => adjustTime(context, toInt(s['voucher_id']), then: () async => _k.currentState?.reload())),
+      (Icons.link_off, 'Disconnect', C.amber, () async {
+        await runAction(context, 'sessions/disconnect', {'session_id': s['id']});
+        _k.currentState?.reload();
+      }),
+      (Icons.block, 'Block this device', C.red, () async {
+        final why = await askText(context, 'Block $mac', label: 'Reason', initial: 'Blocked by seller');
+        if (why == null || !mounted) return;
+        await runAction(context, 'sessions/block', {'mac': mac, 'reason': why});
+        _k.currentState?.reload();
+      }),
+      if (toStr(s['phone']).isNotEmpty) (Icons.call_outlined, 'Call ${toStr(s['phone'])}', C.cyan, () => openUrl(context, 'tel:${toStr(s['phone'])}')),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final tot = toMap(_metrics['total']);
+    final per = toMap(_metrics['sessions']);
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+        child: TextField(
+          decoration: const InputDecoration(hintText: 'Search code, phone, MAC, router', prefixIcon: Icon(Icons.search), isDense: true),
+          onSubmitted: (v) => setState(() => _q = v.trim()),
+        ),
+      ),
+      if (tot.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+          child: Row(children: [
+            const Icon(Icons.speed, size: 18, color: C.cyan),
+            const SizedBox(width: 6),
+            Text('↓ ${fmtBytes(tot['down'])}/s   ↑ ${fmtBytes(tot['up'])}/s', style: const TextStyle(color: C.muted, fontSize: 12.5)),
+            const Spacer(),
+            Text('updated ${toStr(_metrics['at'])}', style: const TextStyle(color: C.muted, fontSize: 11.5)),
+          ]),
+        ),
+      Expanded(
+        child: PagedList(
+          key: _k,
+          route: 'sessions',
+          query: {'q': _q},
+          empty: 'Nobody is online right now.',
+          item: (ctx, s, reload) {
+            final m = toMap(per['${s['id']}']);
+            return GlowCard(
+              glow: C.green,
+              padding: const EdgeInsets.all(14),
+              onTap: () => _menu(s),
+              child: Row(children: [
+                const Icon(Icons.smartphone, color: C.green),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(toStr(s['code'], toStr(s['username'])), style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w800)),
+                    Text('${toStr(s['package_name'], '—')} • ${toStr(s['device_name'], '')}', style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                    Text(
+                        '${toStr(s['phone']).isNotEmpty ? '${toStr(s['phone'])} • ' : ''}${toStr(s['mac'])}${s['remaining_seconds'] != null ? ' • ${fmtSecs(s['remaining_seconds'])} left' : ''}',
+                        style: const TextStyle(fontSize: 12)),
+                    if (m.isNotEmpty) Text('↓ ${fmtBytes(m['down'])}/s ↑ ${fmtBytes(m['up'])}/s', style: const TextStyle(color: C.cyan, fontSize: 11.5)),
+                  ]),
+                ),
+                const Icon(Icons.more_vert, color: C.muted),
+              ]),
+            );
+          },
+        ),
+      ),
+    ]);
+  }
+}
+
+Future<void> adjustTime(BuildContext context, int voucherId, {Future<void> Function()? then}) async {
+  if (voucherId <= 0) {
+    showMessage(context, 'This session has no voucher.', type: 'warning');
+    return;
+  }
+  final mins = TextEditingController(text: '30');
+  final why = TextEditingController();
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Add / remove time'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(
+          controller: mins,
+          keyboardType: const TextInputType.numberWithOptions(signed: true),
+          decoration: const InputDecoration(labelText: 'Minutes (e.g. 30 or -15)'),
+        ),
+        const SizedBox(height: 12),
+        TextField(controller: why, decoration: const InputDecoration(labelText: 'Reason')),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+  await runAction(context, 'sessions/adjust', {'voucher_id': voucherId, 'minutes': toInt(mins.text), 'reason': why.text.trim()});
+  await then?.call();
+}
+
+class CustomersView extends StatefulWidget {
+  const CustomersView({super.key});
+  @override
+  State<CustomersView> createState() => _CustomersViewState();
+}
+
+class _CustomersViewState extends State<CustomersView> with AutomaticKeepAliveClientMixin {
+  String _q = '';
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+        child: TextField(
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(hintText: 'Search phone', prefixIcon: Icon(Icons.search), isDense: true),
+          onSubmitted: (v) => setState(() => _q = v.trim()),
+        ),
+      ),
+      Expanded(
+        child: PagedList(
+          route: 'customers',
+          query: {'q': _q},
+          empty: 'Customers who paid by mobile money appear here.',
+          header: (ctx, x, reload) => x.isEmpty
+              ? const <Widget>[]
+              : [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(children: [
+                      Expanded(child: StatTile(icon: Icons.people, label: 'Customers', value: '${toInt(x['customers'])}', color: C.cyan)),
+                      const SizedBox(width: 10),
+                      Expanded(child: StatTile(icon: Icons.replay, label: 'Came back', value: '${toInt(x['repeat_customers'])}', color: C.green)),
+                    ]),
+                  ),
+                ],
+          item: (ctx, c, reload) => GlowCard(
+            padding: const EdgeInsets.all(14),
+            onTap: () => actionSheet(ctx, toStr(c['phone']), [
+              (Icons.call, 'Call', C.green, () => openUrl(ctx, 'tel:${toStr(c['phone'])}')),
+              (Icons.sms_outlined, 'SMS', C.cyan, () => openUrl(ctx, 'sms:${toStr(c['phone'])}')),
+              (Icons.copy, 'Copy number', C.brand, () => copyText(ctx, toStr(c['phone']))),
+            ]),
+            child: Row(children: [
+              CircleAvatar(backgroundColor: C.brand.withValues(alpha: .2), child: const Icon(Icons.person, color: C.brand)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(toStr(c['phone']), style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text('${toInt(c['n'])} purchase(s) • last ${fmtDate(c['last_at'])}', style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                  Text(toStr(c['last_package']), style: const TextStyle(fontSize: 12)),
+                ]),
+              ),
+              Text(money(c['total']), style: const TextStyle(fontWeight: FontWeight.w800, color: C.green)),
+            ]),
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+class BlockedView extends StatelessWidget {
+  const BlockedView({super.key});
+  @override
+  Widget build(BuildContext context) => AsyncPage<List<dynamic>>(
+        load: () => Api.I.getList('sessions/blocked'),
+        build: (ctx, list, reload) => [
+          if (list.isEmpty) const EmptyView('No blocked devices.', icon: Icons.verified_user_outlined),
+          for (final b in list.map(toMap))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: GlowCard(
+                glow: C.red,
+                padding: const EdgeInsets.all(14),
+                child: Row(children: [
+                  const Icon(Icons.block, color: C.red),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(toStr(b['mac']), style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w800)),
+                      Text('${toStr(b['reason'])} • ${fmtDate(b['created_at'])}${toBool(b['platform_wide']) ? ' • whole platform' : ''}',
+                          style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                    ]),
+                  ),
+                  if (!toBool(b['platform_wide']))
+                    TextButton(
+                      onPressed: () async {
+                        await runAction(ctx, 'sessions/unblock', {'id': b['id']});
+                        reload();
+                      },
+                      child: const Text('Unblock'),
+                    ),
+                ]),
+              ),
+            ),
+        ],
+      );
+}
+
+class CustomersScreen extends StatelessWidget {
+  const CustomersScreen({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Customers')), body: const CustomersView());
+}

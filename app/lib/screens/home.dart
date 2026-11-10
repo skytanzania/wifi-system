@@ -11,6 +11,7 @@ import 'admin.dart';
 import 'auth.dart';
 import 'clients.dart';
 import 'insights.dart';
+import 'map_screen.dart';
 import 'messages.dart';
 import 'money.dart';
 import 'packages.dart';

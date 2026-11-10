@@ -203,6 +203,7 @@ final class SkyApi
             'vouchers/delete_many'   => ['POST', 'seller', $A('vouchers_delete'), false],
             'vouchers/delete_batch'  => ['POST', 'seller', $A('batch_delete'), false],
             'vouchers/print_link'    => ['GET', 'seller', fn() => self::printLink(), false],
+            'vouchers/print_data'    => ['GET', 'seller', fn() => self::printData(), false],
             // ----- seller: clients -----
             'sessions'               => ['GET', 'seller', fn() => self::sessions(), false],
             'sessions/metrics'       => ['GET', 'seller', $X('live_metrics', false), false],
@@ -990,6 +991,31 @@ final class SkyApi
     {
         return rows("SELECT v.batch, COUNT(*) n, MIN(v.created_at) created_at, SUM(v.status IN ('available','sold')) unused, MAX(p.name) package_name, MAX(v.price) price
                      FROM hs_vouchers v LEFT JOIN hs_packages p ON p.id=v.package_id WHERE v.seller_id=? AND v.batch IS NOT NULL GROUP BY v.batch ORDER BY MIN(v.created_at) DESC LIMIT 60", 'i', self::uid());
+    }
+    /** Everything the app needs to draw and print the Kiswahili voucher cards itself (same data as ?page=print). */
+    static function printData(): array
+    {
+        $uid = self::uid();
+        $batch = (string)preg_replace('/[^A-Za-z0-9]/', '', self::str('batch', '', 40));
+        $ids = array_values(array_filter(array_map('intval', (array)(self::$in['ids'] ?? []))));
+        if ($batch === '' && !$ids) self::fail('Choose a batch.', 422, 'missing_batch');
+        $sql = "SELECT v.id, v.code, v.price, v.duration_minutes, v.data_limit_mb, v.max_devices, v.valid_until, v.ssid_lock, v.status, p.name AS package_name, d.ssid
+                FROM hs_vouchers v LEFT JOIN hs_packages p ON p.id=v.package_id LEFT JOIN hs_devices d ON d.id=v.device_id WHERE v.seller_id=?";
+        $list = $ids ? rows($sql . " AND v.id IN (" . implode(',', $ids) . ") ORDER BY v.id", 'i', $uid)
+                     : rows($sql . " AND v.batch=? AND v.status IN ('available','sold') ORDER BY v.id", 'is', $uid, $batch);
+        $defaultSsid = (string)val("SELECT ssid FROM hs_devices WHERE user_id=? ORDER BY id LIMIT 1", 'i', $uid);
+        $seller = row("SELECT full_name, phone FROM users WHERE id=?", 'i', $uid) ?: [];
+        $out = [];
+        foreach ($list as $v) {
+            $ssid = trim((string)($v['ssid_lock'] ?? '')) !== '' ? (string)$v['ssid_lock'] : ((string)($v['ssid'] ?: $defaultSsid) ?: SITE_NAME);
+            $out[] = ['id' => (int)$v['id'], 'code' => $v['code'], 'ssid' => $ssid, 'price' => (float)$v['price'], 'package' => (string)($v['package_name'] ?: swDur((int)$v['duration_minutes'])),
+                'duration' => swDur((int)$v['duration_minutes']), 'data' => (int)$v['data_limit_mb'] > 0 ? fmtBytes($v['data_limit_mb'] * 1048576) : 'Bila kikomo',
+                'max_devices' => (int)$v['max_devices'], 'valid_until' => $v['valid_until'] ? date('d/m/Y', strtotime((string)$v['valid_until'])) : '',
+                'qr_wifi' => wifiQrText($ssid), 'qr_login' => voucherQrUrl((string)$v['code'])];
+        }
+        $mode = (string)getSetting('voucher_qr_mode', 'both');
+        return ['batch' => $batch, 'site_name' => SITE_NAME, 'logo_url' => skyLogoUrl(), 'seller_phone' => (string)($seller['phone'] ?? ''),
+            'qr_mode' => in_array($mode, ['both', 'wifi', 'auto'], true) ? $mode : 'both', 'vouchers' => $out];
     }
     static function printLink(): array
     {

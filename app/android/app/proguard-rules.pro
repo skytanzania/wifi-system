@@ -7,3 +7,8 @@
 -dontwarn javax.annotation.**
 -keepattributes Signature
 -keepattributes *Annotation*
+
+# printing / pdf (voucher printing) and Google Maps
+-keep class net.nfet.flutter.printing.** { *; }
+-keep class com.google.android.gms.maps.** { *; }
+-dontwarn com.google.android.gms.**

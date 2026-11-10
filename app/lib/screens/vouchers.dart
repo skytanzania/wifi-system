@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../api.dart';
 import '../ui.dart';
 import 'home.dart';
+import 'print_vouchers.dart';
 import 'webview.dart';
 
 const _statuses = ['all', 'available', 'sold', 'active', 'expired', 'exhausted', 'blocked', 'cancelled'];
@@ -290,13 +291,9 @@ Future<void> showGenerateDialog(BuildContext context, {Future<void> Function()? 
   if (doPrint == true && context.mounted && batch.isNotEmpty) openPrint(context, batch);
 }
 
-Future<void> openPrint(BuildContext context, String batch) async {
-  try {
-    final d = await Api.I.getMap('vouchers/print_link', {'batch': batch});
-    if (context.mounted) push(context, WebPage(title: 'Vocha $batch', url: toStr(d['print_url'])));
-  } catch (e) {
-    if (context.mounted) showError(context, e);
-  }
+/// Print a batch inside the app (PDF preview → print / save / share). No browser, no external link.
+Future<void> openPrint(BuildContext context, String batch, {List<int> ids = const []}) async {
+  push(context, VoucherPrintScreen(batch: batch, ids: ids));
 }
 
 class VoucherDetailScreen extends StatefulWidget {
@@ -349,6 +346,8 @@ class _VoucherDetailScreenState extends State<VoucherDetailScreen> {
                       ),
                     ),
                   ]),
+                  const SizedBox(height: 10),
+                  GradButton(onPressed: () => openPrint(ctx, '', ids: [toInt(v['id'])]), icon: Icons.print_outlined, label: 'Print this voucher'),
                 ]),
               ),
               const SectionTitle('Details'),
@@ -456,7 +455,7 @@ class _BatchesScreenState extends State<BatchesScreen> {
           key: _k,
           load: () => Api.I.getList('vouchers/batches'),
           build: (ctx, list, reload) => [
-            Text('Printed vouchers are in Kiswahili. To print on paper or save as PDF, open the page and tap "Open in browser".', style: TextStyle(color: C.muted, fontSize: 12.5)),
+            Text('Vouchers are printed in Kiswahili right here in the app: tap the printer on a batch, then Print (any printer on your phone), Save as PDF or Share.', style: TextStyle(color: C.muted, fontSize: 12.5)),
             const SizedBox(height: 12),
             if (list.isEmpty) const EmptyView('No batches yet.'),
             for (final b in list.map(toMap))

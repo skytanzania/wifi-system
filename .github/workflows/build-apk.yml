@@ -18,6 +18,8 @@ jobs:
     env:
       # Every run gets a higher version code (Google Play needs it). The version name comes from pubspec.yaml.
       BUILD_NUMBER: ${{ github.run_number }}
+      # Google Maps key for the Access Point Map (optional; without it the map uses OpenStreetMap).
+      MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
 
     steps:
       - name: Checkout
@@ -78,8 +80,13 @@ jobs:
             || { echo "::error::The keystore, password or alias in the secrets is wrong."; exit 1; }
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
+      - name: Map provider
+        run: |
+          if [ -n "$MAPS_API_KEY" ]; then echo "### 🗺️ Access Point Map: Google Maps" >> "$GITHUB_STEP_SUMMARY";
+          else echo "### 🗺️ Access Point Map: OpenStreetMap (add the GOOGLE_MAPS_API_KEY secret for Google Maps)" >> "$GITHUB_STEP_SUMMARY"; fi
+
       - name: Build release APK
-        run: flutter build apk --release --build-number="$BUILD_NUMBER"
+        run: flutter build apk --release --build-number="$BUILD_NUMBER" --dart-define=MAPS_API_KEY="$MAPS_API_KEY"
 
       - name: Which key signed the APK
         run: |
@@ -119,7 +126,7 @@ jobs:
 
       - name: Build Play Store bundle (AAB)
         if: steps.signing.outputs.signed == 'true'
-        run: flutter build appbundle --release --build-number="$BUILD_NUMBER"
+        run: flutter build appbundle --release --build-number="$BUILD_NUMBER" --dart-define=MAPS_API_KEY="$MAPS_API_KEY"
 
       - name: Upload AAB
         if: steps.signing.outputs.signed == 'true'

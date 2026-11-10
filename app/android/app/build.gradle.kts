@@ -42,6 +42,9 @@ android {
         // version code with --build-number so every Play upload is higher.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Google Maps key for the Access Point Map (GitHub secret GOOGLE_MAPS_API_KEY → env MAPS_API_KEY).
+        // Empty = the map uses OpenStreetMap instead.
+        manifestPlaceholders["MAPS_API_KEY"] = System.getenv("MAPS_API_KEY") ?: ""
     }
 
     signingConfigs {

@@ -67,6 +67,8 @@ class _SessionsViewState extends State<SessionsView> with AutomaticKeepAliveClie
     final mac = toStr(s['mac']);
     await actionSheet(context, toStr(s['code'], mac), [
       (Icons.more_time, 'Add / remove time', C.green, () => adjustTime(context, toInt(s['voucher_id']), then: () async => _k.currentState?.reload())),
+      if (toInt(s['voucher_id']) > 0)
+        (Icons.speed, 'Set speed of this user', C.brand, () => setUserSpeed(context, s, then: () async => _k.currentState?.reload())),
       (Icons.link_off, 'Disconnect', C.amber, () async {
         await runAction(context, 'sessions/disconnect', {'session_id': s['id']});
         _k.currentState?.reload();
@@ -134,6 +136,15 @@ class _SessionsViewState extends State<SessionsView> with AutomaticKeepAliveClie
                         '${toStr(s['phone']).isNotEmpty ? '${toStr(s['phone'])} • ' : ''}${toStr(s['mac'])}${s['remaining_seconds'] != null ? ' • ${fmtSecs(s['remaining_seconds'])} left' : ''}',
                         style: const TextStyle(fontSize: 12)),
                     if (m.isNotEmpty) Text('↓ ${fmtBytes(m['down'])}/s ↑ ${fmtBytes(m['up'])}/s', style: const TextStyle(color: C.cyan, fontSize: 11.5)),
+                    if (s['speed'] is Map)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Row(children: [
+                          Icon(Icons.speed, size: 14, color: _speedColor(toStr(toMap(s['speed'])['source']))),
+                          const SizedBox(width: 4),
+                          Flexible(child: Text('Speed: ${toStr(toMap(s['speed'])['label'])}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _speedColor(toStr(toMap(s['speed'])['source']))))),
+                        ]),
+                      ),
                   ]),
                 ),
                 Icon(Icons.more_vert, color: C.muted),
@@ -144,6 +155,61 @@ class _SessionsViewState extends State<SessionsView> with AutomaticKeepAliveClie
       ),
     ]);
   }
+}
+
+Color _speedColor(String source) => source == 'fup' ? C.amber : (source == 'custom' ? C.brand : C.muted);
+
+String _mbps(dynamic v) {
+  final d = toDouble(v);
+  if (d <= 0) return '0';
+  return d == d.roundToDouble() ? d.toStringAsFixed(0) : d.toString();
+}
+
+/// Speed of ONE user (voucher): set download / upload in Mbps (0 = no limit) or go back to the package speed.
+/// The phone is reconnected by the server and logs in again with the new speed.
+Future<void> setUserSpeed(BuildContext context, Map<String, dynamic> s, {Future<void> Function()? then}) async {
+  final sp = toMap(s['speed']);
+  final down = TextEditingController(text: _mbps(sp['down'] ?? s['speed_down_mbps']));
+  final up = TextEditingController(text: _mbps(sp['up'] ?? s['speed_up_mbps']));
+  final res = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text('Speed — ${toStr(s['code'], toStr(s['username']))}'),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (sp.isNotEmpty) Text('Now: ${toStr(sp['label'])}', style: TextStyle(color: _speedColor(toStr(sp['source'])), fontWeight: FontWeight.w700)),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: TextField(controller: down, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Download (Mbps)'))),
+          const SizedBox(width: 10),
+          Expanded(child: TextField(controller: up, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Upload (Mbps)'))),
+        ]),
+        const SizedBox(height: 8),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final q in const [(1, 0.5), (2, 1), (5, 2), (10, 5)])
+            ActionChip(
+              label: Text('${q.$1}/${q.$2}'),
+              onPressed: () {
+                down.text = '${q.$1}';
+                up.text = '${q.$2}';
+              },
+            ),
+        ]),
+        const SizedBox(height: 8),
+        Text('0 = no limit. The phone reconnects by itself with the new speed.', style: TextStyle(color: C.muted, fontSize: 12)),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(ctx, 'reset'), child: const Text('Package speed')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, 'set'), child: const Text('Apply')),
+      ],
+    ),
+  );
+  if (res == null || !context.mounted) return;
+  await runAction(context, 'sessions/speed', {
+    'voucher_id': toInt(s['voucher_id']),
+    if (res == 'reset') 'reset': true else ...{'down': toDouble(down.text.replaceAll(',', '.')), 'up': toDouble(up.text.replaceAll(',', '.'))},
+  });
+  await then?.call();
 }
 
 Future<void> adjustTime(BuildContext context, int voucherId, {Future<void> Function()? then}) async {

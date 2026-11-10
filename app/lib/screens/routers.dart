@@ -140,6 +140,11 @@ class _RouterFormScreenState extends State<RouterFormScreen> {
   final _lat = TextEditingController();
   final _lng = TextEditingController();
   final _lipa = TextEditingController();
+  final _rProfile = TextEditingController();
+  final _portal = TextEditingController();
+  List<Map<String, dynamic>> _servers = [];
+  String _server = 'main';
+  String _extUrl = 'https://wifi.skytanzania.co.tz';
 
   bool get _isEdit => widget.edit != null;
 
@@ -161,6 +166,12 @@ class _RouterFormScreenState extends State<RouterFormScreen> {
       _lng.text = toStr(e['longitude']);
       _active = e['is_active'] != false;
       _public = e['map_public'] == true;
+      final om = toMap(e['omada']);
+      if (om.isNotEmpty) {
+        _server = toStr(om['radius_server'], 'main');
+        _rProfile.text = toStr(om['radius_profile_name']);
+        _portal.text = toStr(om['portal_name']);
+      }
     }
     _load();
   }
@@ -173,6 +184,9 @@ class _RouterFormScreenState extends State<RouterFormScreen> {
         _brands = toMap(m['brands']);
         _models = toList(m['models']).map((e) => toMap(e)).toList();
         _pkgs = p.map((e) => toMap(e)).where((e) => toBool(e['is_active'])).toList();
+        _servers = toList(m['radius_servers']).map((e) => toMap(e)).toList();
+        _extUrl = toStr(m['omada_external_url'], _extUrl);
+        if (!_servers.any((x) => toStr(x['key']) == _server)) _server = 'main';
         _loading = false;
       });
     } catch (e) {
@@ -202,6 +216,9 @@ class _RouterFormScreenState extends State<RouterFormScreen> {
     };
     if (_brand == 'omada') {
       body['omada_sn'] = _sn.text.trim();
+      body['radius_server'] = _server;
+      body['radius_profile_name'] = _rProfile.text.trim();
+      body['portal_name'] = _portal.text.trim();
       if (_devUser.text.trim().isNotEmpty) {
         body['dev_user'] = _devUser.text.trim();
         body['dev_pass'] = _devPass.text;
@@ -291,6 +308,31 @@ class _RouterFormScreenState extends State<RouterFormScreen> {
                       Field(_sn, 'Serial number (S/N on the label)', icon: Icons.numbers),
                       Field(_devUser, 'Router login username (optional)', icon: Icons.person_outline),
                       Field(_devPass, 'Router login password (optional)', icon: Icons.lock_outline, obscure: true),
+                      const SectionTitle('Omada: RADIUS profile + portal'),
+                      if (_servers.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _server,
+                            isExpanded: true,
+                            decoration: const InputDecoration(labelText: 'RADIUS server', prefixIcon: Icon(Icons.dns_outlined)),
+                            items: [
+                              for (final x in _servers)
+                                DropdownMenuItem(value: toStr(x['key']), child: Text('${toStr(x['name'])} — ${toStr(x['ip'], '—')}', overflow: TextOverflow.ellipsis)),
+                            ],
+                            onChanged: (v) => setState(() => _server = v ?? 'main'),
+                          ),
+                        ),
+                      Field(_rProfile, 'RADIUS profile name (empty = "<router name> RADIUS")', icon: Icons.badge_outlined),
+                      Field(_portal, 'Portal name (empty = router name)', icon: Icons.web_asset),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(children: [
+                          Icon(Icons.link, size: 16, color: C.muted),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text('External Web Portal URL: $_extUrl', style: TextStyle(color: C.muted, fontSize: 12.5))),
+                        ]),
+                      ),
                     ],
                     if (_brand == 'ruijie' || _brand == 'cudy') ...[
                       Field(_exact, 'Exact model (if not in the list)', icon: Icons.memory),
@@ -362,6 +404,7 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
         _act('routers/toggle');
       }),
       if (brand == 'omada') (Icons.rocket_launch_outlined, 'Provision & connect', C.cyan, () => _provision()),
+      if (brand == 'omada') (Icons.sync_alt, 'Sync to Omada (RADIUS + portal)', C.brand2, () => _omadaSync()),
       if (brand == 'omada') (Icons.restart_alt, 'Reboot router', C.amber, () => _act('routers/command', extra: {'cmd': 'reboot'})),
       if (brand == 'omada') (Icons.lightbulb_outline, 'Locate (blink LED)', C.brand, () => _act('routers/command', extra: {'cmd': 'locate'})),
       if (brand == 'ruijie') (Icons.sync, 'Sync with Ruijie Cloud', C.cyan, () => _act('routers/ruijie_sync')),
@@ -378,6 +421,11 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
     ]);
   }
 
+  Future<void> _omadaSync() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => OmadaSyncScreen(widget.id, name: toStr(_d['device_name']))));
+    _reload();
+  }
+
   Future<void> _provision() async {
     await showDialog<void>(context: context, barrierDismissible: false, builder: (_) => ProvisionDialog(widget.id));
     _reload();
@@ -386,7 +434,8 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
   Future<void> _addSsid() async {
     final name = TextEditingController();
     final psk = TextEditingController();
-    var type = 'hotspot';
+    final radiusOnly = toStr(_d['brand']) == 'omada' && toMap(_d['omada'])['ssid_radius_only'] == true && toStr(toMap(_d['omada'])['voucher_mode']) != 'omada';
+    var type = radiusOnly ? 'radius' : 'hotspot';
     var band = 3;
     final ok = await showDialog<bool>(
       context: context,
@@ -399,12 +448,14 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
               DropdownButtonFormField<String>(
                 initialValue: type,
                 decoration: const InputDecoration(labelText: 'Type'),
-                items: const [
-                  DropdownMenuItem(value: 'hotspot', child: Text('Hotspot (vouchers / payment)')),
-                  DropdownMenuItem(value: 'private', child: Text('Private (password)')),
-                  DropdownMenuItem(value: 'radius', child: Text('RADIUS')),
-                  DropdownMenuItem(value: 'enterprise', child: Text('Enterprise')),
-                ],
+                items: radiusOnly
+                    ? const [DropdownMenuItem(value: 'radius', child: Text('RADIUS Server (portal + RADIUS profile)'))]
+                    : const [
+                        DropdownMenuItem(value: 'hotspot', child: Text('Hotspot (vouchers / payment)')),
+                        DropdownMenuItem(value: 'private', child: Text('Private (password)')),
+                        DropdownMenuItem(value: 'radius', child: Text('RADIUS')),
+                        DropdownMenuItem(value: 'enterprise', child: Text('Enterprise')),
+                      ],
                 onChanged: (v) => setS(() => type = v ?? 'hotspot'),
               ),
               const SizedBox(height: 12),
@@ -510,6 +561,23 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
                   KV('Portal URL', toStr(d['portal_url']), copy: true),
                 ]),
               ),
+              if (brand == 'omada' && d['omada'] is Map) ...[
+                SectionTitle('Omada: RADIUS profile + portal', trailing: TextButton.icon(onPressed: _omadaSync, icon: const Icon(Icons.sync_alt, size: 18), label: const Text('Sync'))),
+                GlowCard(
+                  glow: C.brand2,
+                  child: Column(children: [
+                    KV('Portal', toStr(toMap(d['omada'])['portal_effective'])),
+                    KV('RADIUS profile', toStr(toMap(d['omada'])['radius_profile_effective'])),
+                    KV('RADIUS server', () {
+                      final om = toMap(d['omada']);
+                      final sv = toList(om['servers']).map(toMap).where((x) => toStr(x['key']) == toStr(om['radius_server'])).toList();
+                      return sv.isEmpty ? toStr(om['radius_server']) : '${toStr(sv.first['name'])} • ${toStr(sv.first['ip'], '—')}';
+                    }()),
+                    KV('External portal URL', toStr(toMap(d['omada'])['external_url']), copy: true),
+                    KV('Last sync', toMap(d['omada'])['synced_at'] == null ? 'Never' : fmtDate(toMap(d['omada'])['synced_at'])),
+                  ]),
+                ),
+              ],
               if (health.isNotEmpty) ...[
                 const SectionTitle('Health'),
                 GlowCard(
@@ -764,4 +832,154 @@ class _WifiNamesScreenState extends State<WifiNamesScreen> {
           ],
         ),
       );
+}
+
+// ---------------------------------------------------------------------
+// Omada sync: RADIUS server + RADIUS profile + portal named after the router → Omada
+// ---------------------------------------------------------------------
+class OmadaSyncScreen extends StatefulWidget {
+  final int id;
+  final String name;
+  const OmadaSyncScreen(this.id, {super.key, this.name = ''});
+  @override
+  State<OmadaSyncScreen> createState() => _OmadaSyncScreenState();
+}
+
+class _OmadaSyncScreenState extends State<OmadaSyncScreen> {
+  Map<String, dynamic>? _d;
+  Object? _err;
+  String _server = 'main';
+  String _pick = 'auto';
+  final _profile = TextEditingController();
+  final _portal = TextEditingController();
+  List<String> _log = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _err = null);
+    try {
+      final d = await Api.I.getMap('routers/omada', {'id': widget.id});
+      final profs = toList(d['omada_profiles']).map(toMap).toList();
+      final rid = toStr(d['radius_profile_id']);
+      setState(() {
+        _d = d;
+        _server = toStr(d['radius_server'], 'main');
+        _profile.text = toStr(d['radius_profile_name']);
+        _portal.text = toStr(d['portal_name']);
+        final hit = profs.where((p) => toStr(p['id']) == rid && rid.isNotEmpty).toList();
+        _pick = hit.isEmpty ? 'auto' : '${toStr(hit.first['id'])}|${toStr(hit.first['name'])}';
+      });
+    } catch (e) {
+      setState(() => _err = e);
+    }
+  }
+
+  Map<String, dynamic> get _body => {
+        'id': widget.id,
+        'radius_server': _server,
+        'radius_profile_pick': _pick,
+        if (_pick == 'auto') 'radius_profile_name': _profile.text.trim(),
+        'portal_name': _portal.text.trim(),
+      };
+
+  Future<void> _save({required bool sync}) async {
+    final r = await runAction(context, 'routers/omada_sync', {..._body, if (!sync) 'save_only': true});
+    if (r == null) return;
+    final src = toStr(r.raw['message_html'], r.message);
+    setState(() => _log = src
+        .split(RegExp(r'<br\s*/?>|\n'))
+        .map((x) => x.replaceAll(RegExp(r'<[^>]*>'), '').replaceAll('&quot;', '"').replaceAll('&#039;', "'").replaceAll('&amp;', '&').trim())
+        .where((x) => x.isNotEmpty)
+        .toList());
+    await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = _d;
+    return Scaffold(
+      appBar: skyBar('Sync to Omada'),
+      body: _err != null
+          ? ErrorView(_err!, _load)
+          : d == null
+              ? const SkeletonDetail()
+              : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 40), children: [
+                  GlowCard(
+                    glow: C.brand2,
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(widget.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                      const SizedBox(height: 6),
+                      Text(
+                          'The RADIUS profile, the portal named after this router (External RADIUS → that profile) and all its RADIUS WiFi names are written into its Omada site.',
+                          style: TextStyle(color: C.muted, fontSize: 12.5)),
+                      if (d['site_ready'] != true) ...[
+                        const SizedBox(height: 10),
+                        Text('Run "Provision & connect" first (Omada site + Open API keys) — then sync.', style: const TextStyle(color: C.amber, fontWeight: FontWeight.w700)),
+                      ],
+                    ]),
+                  ),
+                  const SectionTitle('RADIUS server'),
+                  DropdownButtonFormField<String>(
+                    initialValue: toList(d['servers']).any((x) => toStr(toMap(x)['key']) == _server) ? _server : null,
+                    isExpanded: true,
+                    decoration: const InputDecoration(prefixIcon: Icon(Icons.dns_outlined)),
+                    items: [
+                      for (final x in toList(d['servers']).map(toMap))
+                        DropdownMenuItem(value: toStr(x['key']), child: Text('${toStr(x['name'])} — ${toStr(x['ip'], '—')}', overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: (v) => setState(() => _server = v ?? 'main'),
+                  ),
+                  const SectionTitle('RADIUS profile'),
+                  DropdownButtonFormField<String>(
+                    initialValue: _pick,
+                    isExpanded: true,
+                    decoration: const InputDecoration(prefixIcon: Icon(Icons.badge_outlined)),
+                    items: [
+                      const DropdownMenuItem(value: 'auto', child: Text('Create / update one named after the router')),
+                      for (final p in toList(d['omada_profiles']).map(toMap))
+                        DropdownMenuItem(
+                          value: '${toStr(p['id'])}|${toStr(p['name'])}',
+                          child: Text('${toStr(p['name'])}${toStr(p['server']).isNotEmpty ? ' — ${toStr(p['server'])}' : ''}${p['mine'] == true ? ' ✔' : ''}', overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: (v) => setState(() => _pick = v ?? 'auto'),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_pick == 'auto') Field(_profile, 'Profile name (empty = ${toStr(d['radius_profile_default'])})', icon: Icons.edit_outlined),
+                  const SectionTitle('Portal'),
+                  Field(_portal, 'Portal name (empty = ${toStr(d['portal_default'])})', icon: Icons.web_asset),
+                  GlowCard(
+                    child: Column(children: [
+                      KV('Portal', toStr(d['portal_effective'])),
+                      KV('RADIUS profile', toStr(d['radius_profile_effective'])),
+                      const KV('Authentication', 'External RADIUS Server • PAP'),
+                      KV('External portal URL', toStr(d['external_url']), copy: true),
+                      KV('New WiFi names', d['ssid_radius_only'] == true ? 'RADIUS Server only' : 'Any type'),
+                      KV('Last sync', d['synced_at'] == null ? 'Never' : fmtDate(d['synced_at'])),
+                    ]),
+                  ),
+                  const SizedBox(height: 16),
+                  GradButton(onPressed: d['site_ready'] == true ? () => _save(sync: true) : null, icon: Icons.sync_alt, label: 'Sync to Omada'),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(onPressed: () => _save(sync: false), icon: const Icon(Icons.save_outlined), label: const Text('Save only')),
+                  if (_log.isNotEmpty) ...[
+                    const SectionTitle('Result'),
+                    GlowCard(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        for (final l in _log)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Text(l, style: TextStyle(fontSize: 12.5, color: l.startsWith('✖') ? C.red : (l.startsWith('✔') ? C.green : null))),
+                          ),
+                      ]),
+                    ),
+                  ],
+                ]),
+    );
+  }
 }

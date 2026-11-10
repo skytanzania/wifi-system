@@ -1,6 +1,7 @@
 // SKY WIFI TANZANIA — API client for api.php (see server/API-DOCS.md)
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -202,6 +203,32 @@ class Api {
   /// GET → the full JSON answer (used for live routes).
   Future<Map<String, dynamic>> raw(String route, [Map<String, dynamic>? q]) =>
       _send(route, () => _call('GET', uri(route, q)));
+
+  /// GET a file (PDF report …) → its bytes. A JSON answer means an error (message shown to the user).
+  Future<Uint8List> bytes(String route, [Map<String, dynamic>? q]) async {
+    http.Response r;
+    try {
+      r = await _call('GET', uri(route, q)).timeout(const Duration(seconds: 90));
+    } on TimeoutException {
+      throw ApiException('The server is taking too long. Check your internet and try again.', code: 'timeout');
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException('No internet connection. Check your mobile data or WiFi and try again.', code: 'network');
+    }
+    final ct = (r.headers['content-type'] ?? '').toLowerCase();
+    if (r.statusCode == 200 && !ct.contains('json') && !ct.contains('text/html')) return r.bodyBytes;
+    String msg = 'Could not download the file (HTTP ${r.statusCode}).';
+    try {
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      if (j is Map && j['message'] is String) msg = j['message'] as String;
+    } catch (_) {}
+    if (r.statusCode == 401 && token != null) {
+      await saveToken(null);
+      onUnauthorized?.call();
+    }
+    throw ApiException(msg, code: 'download_failed', status: r.statusCode);
+  }
 
   /// GET → `data` (throws ApiException when ok = false).
   Future<dynamic> get(String route, [Map<String, dynamic>? q]) async {

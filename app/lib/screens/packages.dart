@@ -53,6 +53,9 @@ class _PackagesScreenState extends State<PackagesScreen> {
                         Text(
                             '${toInt(p['data_limit_mb']) > 0 ? '${toInt(p['data_limit_mb'])} MB' : 'Unlimited'} • ${toInt(p['max_devices'])} device(s) • ${toInt(p['unused_vouchers'])} unused voucher(s)',
                             style: TextStyle(color: C.muted, fontSize: 12)),
+                        if (toInt(p['fup_mb']) > 0)
+                          Text('Fair usage: after ${toInt(p['fup_mb'])} MB → ${toDouble(p['fup_down_mbps']) > 0 ? toStr(p['fup_down_mbps']) : '∞'}/${toDouble(p['fup_up_mbps']) > 0 ? toStr(p['fup_up_mbps']) : '∞'} Mbps',
+                              style: const TextStyle(color: C.amber, fontSize: 11.5, fontWeight: FontWeight.w700)),
                       ]),
                     ),
                     Column(children: [
@@ -98,6 +101,9 @@ class _PackageFormScreenState extends State<PackageFormScreen> {
   final _data = TextEditingController(text: '0');
   final _down = TextEditingController(text: '0');
   final _up = TextEditingController(text: '0');
+  final _fupMb = TextEditingController(text: '0');
+  final _fupDown = TextEditingController(text: '0');
+  final _fupUp = TextEditingController(text: '0');
   final _devices = TextEditingController(text: '1');
   final _valid = TextEditingController(text: '30');
   final _sort = TextEditingController(text: '0');
@@ -129,6 +135,9 @@ class _PackageFormScreenState extends State<PackageFormScreen> {
       _data.text = '${toInt(p['data_limit_mb'])}';
       _down.text = toStr(p['speed_down_mbps'], '0');
       _up.text = toStr(p['speed_up_mbps'], '0');
+      _fupMb.text = '${toInt(p['fup_mb'])}';
+      _fupDown.text = toStr(p['fup_down_mbps'], '0');
+      _fupUp.text = toStr(p['fup_up_mbps'], '0');
       _devices.text = '${toInt(p['max_devices'], 1)}';
       _valid.text = '${toInt(p['validity_days'], 30)}';
       _sort.text = '${toInt(p['sort_order'])}';
@@ -151,6 +160,10 @@ class _PackageFormScreenState extends State<PackageFormScreen> {
       showMessage(context, 'Enter the package name.', type: 'warning');
       return;
     }
+    if (toInt(_fupMb.text) > 0 && toDouble(_fupDown.text) <= 0 && toDouble(_fupUp.text) <= 0) {
+      showMessage(context, 'Fair usage: enter the slower download or upload speed (Mbps).', type: 'warning');
+      return;
+    }
     final r = await runAction(context, 'packages/save', {
       if (widget.edit != null) 'id': widget.edit!['id'],
       'name': _name.text.trim(),
@@ -161,6 +174,9 @@ class _PackageFormScreenState extends State<PackageFormScreen> {
       'data_limit_mb': toInt(_data.text),
       'speed_down_mbps': toDouble(_down.text),
       'speed_up_mbps': toDouble(_up.text),
+      'fup_mb': toInt(_fupMb.text),
+      'fup_down_mbps': toDouble(_fupDown.text),
+      'fup_up_mbps': toDouble(_fupUp.text),
       'max_devices': toInt(_devices.text, 1),
       'validity_days': toInt(_valid.text, 30),
       'sort_order': toInt(_sort.text),
@@ -220,6 +236,27 @@ class _PackageFormScreenState extends State<PackageFormScreen> {
             const SizedBox(width: 10),
             Expanded(child: Field(_up, 'Upload Mbps', keyboard: const TextInputType.numberWithOptions(decimal: true))),
           ]),
+          GlowCard(
+            glow: C.amber,
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Row(children: [
+                Icon(Icons.speed, color: C.amber, size: 18),
+                SizedBox(width: 8),
+                Expanded(child: Text('Fair usage (speed after a data limit)', style: TextStyle(fontWeight: FontWeight.w800))),
+              ]),
+              const SizedBox(height: 4),
+              Text('When ONE user has used this much data, only his speed drops (0 MB = off). He is reconnected automatically.', style: TextStyle(color: C.muted, fontSize: 12)),
+              const SizedBox(height: 10),
+              Field(_fupMb, 'After (MB used)', keyboard: TextInputType.number, icon: Icons.data_usage),
+              Row(children: [
+                Expanded(child: Field(_fupDown, 'Then download Mbps', keyboard: const TextInputType.numberWithOptions(decimal: true))),
+                const SizedBox(width: 10),
+                Expanded(child: Field(_fupUp, 'Then upload Mbps', keyboard: const TextInputType.numberWithOptions(decimal: true))),
+              ]),
+            ]),
+          ),
+          const SizedBox(height: 12),
           Row(children: [
             Expanded(child: Field(_devices, 'Devices per voucher (1–10)', keyboard: TextInputType.number)),
             const SizedBox(width: 10),

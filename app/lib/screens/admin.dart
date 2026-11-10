@@ -41,7 +41,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: skyBar('Administrator',
-          actions: [IconButton(tooltip: 'Message all sellers', icon: const Icon(Icons.campaign_outlined), onPressed: _broadcast)],
+          actions: [
+            IconButton(tooltip: 'SMS to every client after a sale', icon: const Icon(Icons.sms_outlined), onPressed: () => push(context, const AfterSaleSmsScreen())),
+            IconButton(tooltip: 'Message all sellers', icon: const Icon(Icons.campaign_outlined), onPressed: _broadcast),
+          ],
           bottom: TabBar(controller: _tc, isScrollable: true, tabAlignment: TabAlignment.start, tabs: const [
             Tab(text: 'Overview'),
             Tab(text: 'Sellers'),
@@ -107,6 +110,22 @@ class _Overview extends StatelessWidget {
                 ]),
               ),
             ],
+            const SizedBox(height: 12),
+            GlowCard(
+              glow: C.green,
+              onTap: () => push(ctx, const AfterSaleSmsScreen()),
+              child: const Row(children: [
+                Icon(Icons.sms_outlined, color: C.green),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('SMS to every client after a sale', style: TextStyle(fontWeight: FontWeight.w800)),
+                    Text('Clients of ALL sellers get their voucher by SMS (paid by the platform)', style: TextStyle(fontSize: 12)),
+                  ]),
+                ),
+                Icon(Icons.chevron_right),
+              ]),
+            ),
             if (cm.isNotEmpty) ...[
               const SectionTitle('Voucher commission'),
               GlowCard(
@@ -326,5 +345,99 @@ class _CommissionsState extends State<_Commissions> with AutomaticKeepAliveClien
         ),
       ),
     ]);
+  }
+}
+
+/// Administrator: platform SMS with the voucher code to the client of ANY seller after each mobile money sale.
+class AfterSaleSmsScreen extends StatefulWidget {
+  const AfterSaleSmsScreen({super.key});
+  @override
+  State<AfterSaleSmsScreen> createState() => _AfterSaleSmsScreenState();
+}
+
+class _AfterSaleSmsScreenState extends State<AfterSaleSmsScreen> {
+  Map<String, dynamic>? _d;
+  Object? _err;
+  bool _on = false;
+  bool _always = false;
+  final _tpl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _err = null);
+    try {
+      final d = await Api.I.getMap('admin/sms_after_sale');
+      setState(() {
+        _d = d;
+        _on = d['enabled'] == true;
+        _always = d['always'] == true;
+        _tpl.text = toStr(d['template']);
+      });
+    } catch (e) {
+      setState(() => _err = e);
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_tpl.text.contains('{code}')) {
+      showMessage(context, 'The message must contain {code} (the voucher).', type: 'warning');
+      return;
+    }
+    final r = await runAction(context, 'admin/sms_after_sale/save', {'enabled': _on, 'always': _always, 'template': _tpl.text.trim()});
+    if (r != null && r.ok) _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = _d;
+    return Scaffold(
+      appBar: skyBar('SMS after a sale'),
+      body: _err != null
+          ? ErrorView(_err!, _load)
+          : d == null
+              ? const SkeletonDetail()
+              : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 40), children: [
+                  GlowCard(
+                    glow: _on ? C.green : C.muted,
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        StatusChip(_on ? 'active' : 'blocked', label: _on ? 'ON' : 'OFF'),
+                        const Spacer(),
+                        Text('Sent this month: ${toInt(d['sent_this_month'])}', style: TextStyle(color: C.muted, fontSize: 12.5)),
+                      ]),
+                      const SizedBox(height: 8),
+                      Text('After each mobile money sale of ANY seller, the client gets the voucher code by SMS. It is free for the seller (the platform pays).',
+                          style: TextStyle(color: C.muted, fontSize: 12.5)),
+                      if (d['sms_ready'] != true) ...[
+                        const SizedBox(height: 8),
+                        const Text('NEXT SMS is not set up yet — messages are sent once it is ready (website → Messaging).', style: TextStyle(color: C.amber, fontWeight: FontWeight.w700, fontSize: 12.5)),
+                      ],
+                    ]),
+                  ),
+                  SwitchListTile(
+                    value: _on,
+                    onChanged: (v) => setState(() => _on = v),
+                    title: const Text('SMS every client after a sale (all sellers)'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  SwitchListTile(
+                    value: _always,
+                    onChanged: (v) => setState(() => _always = v),
+                    title: const Text('Also when the seller sends his own SMS'),
+                    subtitle: const Text('The client may then get two messages'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const SizedBox(height: 8),
+                  Field(_tpl, 'Message', maxLines: 4),
+                  Text('Placeholders: {code} voucher, {package}, {ssid} WiFi name, {seller}, {amount}. Kiswahili is best for clients.', style: TextStyle(color: C.muted, fontSize: 12)),
+                  const SizedBox(height: 16),
+                  GradButton(onPressed: _save, icon: Icons.save_outlined, label: 'Save'),
+                ]),
+    );
   }
 }

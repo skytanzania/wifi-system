@@ -1,9 +1,12 @@
 <?php
 /**
  * ============================================================================
- *  SKY WIFI TANZANIA — api.php  v1.0  (JSON REST API for the mobile app)
+ *  SKY WIFI TANZANIA — api.php  v1.1  (JSON REST API for the mobile app)
  * ============================================================================
- *  Put this file next to index.php (index.php v9.6 or newer) and config.local.php. Nothing else is needed:
+ *  v1.1 (index.php v9.7): routers/omada + routers/omada_sync (RADIUS server / profile / portal → Omada), sessions/speed (speed of one
+ *        user), package fair usage (fup_mb, fup_down_mbps, fup_up_mbps), export/report_pdf (report as PDF), admin/sms_after_sale(+/save),
+ *        admin/radius_servers.
+ *  Put this file next to index.php (index.php v9.7 or newer) and config.local.php. Nothing else is needed:
  *  the API uses index.php as its engine (database, classes, Omada / Ruijie / Cudy, RADIUS, Sonic Pesa, SMS, e-mail),
  *  so every write goes through exactly the same code as the website — same checks, same results.
  *
@@ -26,7 +29,7 @@
  *  Optional in config.local.php:  define('SKY_API_TOKEN_DAYS', '90');   define('SKY_API_CORS', '*');
  * ============================================================================
  */
-define('SKY_API', '1.0');
+define('SKY_API', '1.1');
 
 // ---------- CORS (a web build of the app may call the API from another origin; tokens are never cookies) ----------
 $__apiOrigin = defined('SKY_API_CORS') ? (string)SKY_API_CORS : '*';
@@ -114,7 +117,7 @@ final class SkyApi
         'package_save', 'package_delete', 'vouchers_generate', 'voucher_status', 'voucher_delete', 'vouchers_delete', 'batch_delete', 'wifi_names_add',
         'chat_send', 'adjust', 'bulk_adjust', 'disconnect', 'block_mac', 'unblock_mac', 'order_cancel', 'pay_manage', 'pay_recheck_all',
         'profile', 'password', 'prefs', 'notif_read_all', 'portal_announce', 'privacy_accept', 'insights_goal',
-        'commission_pay', 'commission_pay_now', 'sms_buy', 'sms_send', 'sms_auto_save'];
+        'commission_pay', 'commission_pay_now', 'sms_buy', 'sms_send', 'sms_auto_save', 'omada_sync', 'voucher_speed'];   // v1.1: + Omada sync, speed per user
     /** Live data requests of the website (index.php ?ajax=…) the app may use. */
     const AJAX = ['live', 'live_badges', 'live_metrics', 'notif_read', 'sms_buy_status', 'commission_status', 'chat_count', 'chat_poll', 'chat_send',
         'chat_delete', 'chat_inbox', 'prov_step', 'visitors_live', 'simulate'];
@@ -185,6 +188,8 @@ final class SkyApi
             'routers/cudy_portal'    => ['POST', 'seller', $A('cd_portal_save'), false],
             'routers/ruijie_portal'  => ['POST', 'seller', $A('rj_portal_save'), false],
             'routers/ruijie_sync'    => ['POST', 'seller', $A('rj_sync'), false],
+            'routers/omada'          => ['GET', 'seller', fn() => self::routerOmada(), false],
+            'routers/omada_sync'     => ['POST', 'seller', $A('omada_sync', fn($p) => self::omadaSyncPrep($p)), false],
             'wifi_names'             => ['GET', 'seller', fn() => self::wifiNames(), false],
             'wifi_names/add'         => ['POST', 'seller', $A('wifi_names_add'), false],
             'map'                    => ['GET', 'seller', fn() => self::map(), false],
@@ -213,6 +218,7 @@ final class SkyApi
             'sessions/bulk_adjust'   => ['POST', 'seller', $A('bulk_adjust'), false],
             'sessions/block'         => ['POST', 'seller', $A('block_mac'), false],
             'sessions/unblock'       => ['POST', 'seller', $A('unblock_mac'), false],
+            'sessions/speed'         => ['POST', 'seller', $A('voucher_speed', fn($p) => self::speedPrep($p)), false],
             'customers'              => ['GET', 'seller', fn() => self::customers(), false],
             'adjustments'            => ['GET', 'seller', fn() => self::adjustments(), false],
             // ----- seller: money -----
@@ -245,6 +251,7 @@ final class SkyApi
             'export/payments'        => ['GET', 'seller', fn() => self::raw('export', 'payments'), false],
             'export/sessions'        => ['GET', 'seller', fn() => self::raw('export', 'sessions'), false],
             'export/report'          => ['GET', 'seller', fn() => self::raw('export', 'report'), false],
+            'export/report_pdf'      => ['GET', 'seller', fn() => self::raw('export', 'report_pdf'), false],
             'view/print'             => ['GET', 'ticket', fn() => self::raw('page', 'print'), false],
             'view/posters'           => ['GET', 'ticket', fn() => self::raw('page', 'posters'), false],
             // ----- administrator -----
@@ -260,6 +267,9 @@ final class SkyApi
             'admin/visitors'         => ['GET', 'admin', fn() => self::adminVisitors(), true],
             'admin/broadcast'        => ['POST', 'admin', $A('admin_broadcast'), true],
             'admin/sms_credit'       => ['POST', 'admin', $A('msg_credit'), true],
+            'admin/sms_after_sale'   => ['GET', 'admin', fn() => self::adminAfterSale(), true],
+            'admin/sms_after_sale/save' => ['POST', 'admin', $A('msg_after_sale_save', fn($p) => self::afterSalePrep($p)), true],
+            'admin/radius_servers'   => ['GET', 'admin', fn() => self::adminRadiusServers(), true],
             'admin/inbox'            => ['GET', 'admin', $X('chat_inbox', false), true],
             // ----- any other website action / live request -----
             'action'                 => ['POST', 'user', fn() => self::genericAction(), true],
@@ -861,7 +871,56 @@ final class SkyApi
         $o['outages'] = Outage::ready() ? Outage::forDevice((int)$d['id'], 10) : [];
         $o['radius_log'] = rows("SELECT kind, username, mac, result, message, created_at FROM hs_radius_log WHERE nas_id=? ORDER BY id DESC LIMIT 15", 's', (string)$d['nas_id']);
         $o['radius_server_online'] = (int)getSetting('radius_server_seen', '0') > time() - 180;
+        if (!RouterModels::isRuijie($d) && !RouterModels::isCudy($d)) $o['omada'] = self::omadaInfo($d, false);   // v1.1 — Omada sync
         return $o;
+    }
+    /** v1.1 — Omada RADIUS server / profile / portal of one router (+ RADIUS profiles in its Omada site when $live). */
+    static function omadaInfo(array $d, bool $live): array
+    {
+        $o = ['radius_server' => RadiusServers::keyOf($d), 'radius_profile_name' => (string)($d['omada_radius_name'] ?? ''), 'portal_name' => (string)($d['omada_portal_name'] ?? ''),
+            'radius_profile_effective' => OmadaProvision::radiusName($d), 'portal_effective' => OmadaProvision::portalName($d),
+            'radius_profile_default' => OmadaProvision::radiusName(['omada_radius_name' => ''] + $d), 'portal_default' => OmadaProvision::portalName(['omada_portal_name' => ''] + $d),
+            'radius_profile_id' => (string)($d['omada_radius_id'] ?? ''), 'portal_id' => (string)($d['omada_portal_id'] ?? ''),
+            'external_url' => omadaExternalUrl(), 'ssid_radius_only' => omadaSsidRadiusOnly(), 'synced_at' => $d['omada_synced_at'] ?? null,
+            'site_ready' => (string)($d['omada_site_id'] ?? '') !== '', 'voucher_mode' => (string)($d['voucher_mode'] ?? 'radius'),
+            'servers' => array_values(array_map(fn($x) => ['key' => $x['key'], 'name' => $x['name'], 'ip' => $x['ip'], 'acct_ip' => $x['acct_ip']], RadiusServers::all()))];
+        if ($live) $o['omada_profiles'] = OmadaProvision::siteRadiusProfiles($d, (int)$d['user_id']);
+        return $o;
+    }
+    static function routerOmada(): array
+    {
+        $d = self::myDevice(self::int('id'));
+        if (RouterModels::isRuijie($d) || RouterModels::isCudy($d)) self::fail(t('osync_omada_only'), 400, 'not_omada');
+        return self::omadaInfo($d, true);
+    }
+    static function omadaSyncPrep(array $p): array
+    {
+        $d = self::myDevice((int)($p['id'] ?? 0));
+        if ((int)$d['user_id'] !== self::uid()) self::fail('Only the owner of the router can sync it.', 403, 'forbidden');
+        if (array_key_exists('save_only', $p)) { if (filter_var($p['save_only'], FILTER_VALIDATE_BOOLEAN)) $p['save_only'] = '1'; else unset($p['save_only']); }
+        return $p;
+    }
+    static function speedPrep(array $p): array
+    {
+        $p['mode'] = (($p['mode'] ?? '') === 'reset' || filter_var($p['reset'] ?? false, FILTER_VALIDATE_BOOLEAN)) ? 'reset' : 'set';
+        return $p;
+    }
+    static function adminAfterSale(): array
+    {
+        return ['enabled' => getSetting('sms_platform_after_sale', '0') === '1', 'always' => getSetting('sms_platform_always', '0') === '1',
+            'template' => Sms::platformTemplate(), 'sms_ready' => Sms::ready() && NextSms::configured(),
+            'sent_this_month' => Sms::ready() ? (int)val("SELECT COUNT(*) FROM hs_sms_messages WHERE kind='auto_platform' AND created_at >= ?", 's', date('Y-m-01 00:00:00')) : 0];
+    }
+    static function afterSalePrep(array $p): array
+    {
+        foreach (['on', 'always'] as $k) if (array_key_exists($k, $p)) { if (filter_var($p[$k], FILTER_VALIDATE_BOOLEAN)) $p[$k] = 1; else unset($p[$k]); }
+        if (array_key_exists('enabled', $p) && !array_key_exists('on', $p) && filter_var($p['enabled'], FILTER_VALIDATE_BOOLEAN)) $p['on'] = 1;
+        if (array_key_exists('template', $p) && !array_key_exists('tpl', $p)) $p['tpl'] = $p['template'];
+        return $p;
+    }
+    static function adminRadiusServers(): array
+    {
+        return ['servers' => array_values(RadiusServers::all()), 'external_url' => omadaExternalUrl(), 'ssid_radius_only' => omadaSsidRadiusOnly()];
     }
     static function myDevice(int $id): array
     {
@@ -892,7 +951,9 @@ final class SkyApi
                 'description' => $m['description'] ?? null, 'icon' => $m['icon'] ?? null];
         $b = [];
         foreach ((array)RouterModels::BRANDS as $k => $v) $b[$k] = is_array($v) ? ['name' => $v['name'] ?? $k, 'icon' => $v['icon'] ?? '', 'desc' => t((string)($v['desc'] ?? ''))] : $v;
-        return ['brands' => $b, 'models' => $o];
+        return ['brands' => $b, 'models' => $o,   // v1.1 — RADIUS servers a router can use + the Omada External Web Portal URL
+            'radius_servers' => array_values(array_map(fn($x) => ['key' => $x['key'], 'name' => $x['name'], 'ip' => $x['ip']], RadiusServers::all())),
+            'omada_external_url' => omadaExternalUrl(), 'omada_ssid_radius_only' => omadaSsidRadiusOnly()];
     }
     /** Router form: keep the current values the app did not send (the website form always sends every field). */
     static function routerPrep(array $p): array
@@ -943,7 +1004,8 @@ final class SkyApi
         $cur = $id ? row("SELECT * FROM hs_packages WHERE id=? AND seller_id=?", 'ii', $id, self::uid()) : null;
         if ($id && !$cur) self::fail('Package not found.', 404, 'not_found');
         $def = $cur ?: ['name' => '', 'description' => '', 'price' => 0, 'duration_minutes' => 60, 'time_mode' => 'continuous', 'data_limit_mb' => 0, 'speed_down_mbps' => 0,
-            'speed_up_mbps' => 0, 'max_devices' => 1, 'validity_days' => 30, 'show_on_portal' => 1, 'is_active' => 1, 'sort_order' => 0, 'device_id' => 0];
+            'speed_up_mbps' => 0, 'max_devices' => 1, 'validity_days' => 30, 'show_on_portal' => 1, 'is_active' => 1, 'sort_order' => 0, 'device_id' => 0,
+            'fup_mb' => 0, 'fup_down_mbps' => 0, 'fup_up_mbps' => 0];   // v1.1: + fair usage
         foreach ($def as $k => $v) if (!array_key_exists($k, $p)) $p[$k] = $v;
         foreach (['show_on_portal', 'is_active'] as $k) { if (filter_var($p[$k], FILTER_VALIDATE_BOOLEAN)) $p[$k] = 1; else unset($p[$k]); }
         if (!$id) unset($p['id']);
@@ -1037,7 +1099,10 @@ final class SkyApi
         if ($q !== '') $list = array_values(array_filter($list, fn($s) => matchAny($q, [$s['code'], $s['username'], $s['mac'], dashMac((string)$s['mac']), $s['ip'], $s['package_name'], $s['device_name'], SessionOps::phoneOf($s)])));
         [$p, $per, $off] = self::pg(50);
         $page = array_slice($list, $off, $per);
-        foreach ($page as &$s) { $s['remaining_seconds'] = !empty($s['code']) ? Vouchers::remainingSeconds($s) : null; $s['phone'] = SessionOps::phoneOf($s); }
+        foreach ($page as &$s) {
+            $s['remaining_seconds'] = !empty($s['code']) ? Vouchers::remainingSeconds($s) : null; $s['phone'] = SessionOps::phoneOf($s);
+            if (!empty($s['voucher_id'])) { [$sd, $su, $sw] = SpeedCtl::forVoucher($s); $s['speed'] = ['down' => $sd, 'up' => $su, 'source' => $sw, 'label' => SpeedCtl::label($s)]; }   // v1.1
+        }
         unset($s);
         return self::list(array_values($page), count($list), $p, $per);
     }

@@ -5,6 +5,7 @@ import '../api.dart';
 import '../main.dart';
 import '../ui.dart';
 import 'home.dart';
+import 'report_pdf.dart';
 
 class InsightsScreen extends StatefulWidget {
   const InsightsScreen({super.key});
@@ -300,6 +301,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   ),
               ],
               const SizedBox(height: 14),
+              GradButton(
+                onPressed: () => push(ctx, ReportPdfScreen(type: _type, period: _period, id: toInt(d['id']), label: toStr(d['label']))),
+                icon: Icons.picture_as_pdf,
+                label: 'Download / print PDF',
+              ),
+              const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: () => copyText(ctx, toStr(d['summary_text']), what: 'Report copied — paste it in WhatsApp or SMS'),
                 icon: const Icon(Icons.copy_all),

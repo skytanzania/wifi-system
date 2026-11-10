@@ -113,11 +113,13 @@ Tokens last 90 days after their last use and are revoked when the password chang
 | `routers/command` | POST | `id`, `cmd` = reboot / locate | Omada |
 | `routers/link_check` / `routers/link_fix` | POST | `id` | health check / repair |
 | `routers/sync_all` | POST | – | refresh all router statuses |
-| `routers/ssid_create` | POST | `id`, `name`, `type` = hotspot / private / radius / enterprise, `psk` (private, 8–63), `band` = 1 (2.4 GHz) / 2 (5 GHz) / 3 (both) | extra WiFi name |
+| `routers/ssid_create` | POST | `id`, `name`, `type` = hotspot / private / radius / enterprise, `psk` (private, 8–63), `band` = 1 (2.4 GHz) / 2 (5 GHz) / 3 (both) | extra WiFi name · **v1.1:** on Omada routers the type is always `radius` (RADIUS Server, joined to the router's portal + RADIUS profile) while the admin switch is on |
 | `routers/ssid_delete` | POST | `id`, `ssid` (id from `extra_ssids`) | |
 | `routers/cudy_portal` | POST | `id`, `secret`, `mode`, `port`, `https`, `path` | Cudy login settings |
 | `routers/ruijie_portal` | POST | `id`, `tpl`, `method`, `ufield`, `pfield`, `echo` | Ruijie login settings |
 | `routers/ruijie_sync` | POST | `id` | |
+| `routers/omada` | GET | `id` | **v1.1** Omada choices: `radius_server`, `servers` (main + extra), `radius_profile_name`, `portal_name` (+ `_effective`, `_default`), `external_url` (https://wifi.skytanzania.co.tz), `omada_profiles` (RADIUS profiles in the router's Omada site), `synced_at` |
+| `routers/omada_sync` | POST | `id`, `radius_server` (key), `radius_profile_pick` = `auto` or `"<id>|<name>"` of an Omada profile, `radius_profile_name`, `portal_name`, `save_only` (true = save without syncing) | **v1.1** writes RADIUS profile + portal named after the router + its RADIUS SSIDs into Omada |
 | `wifi_names` | GET | – | every router's WiFi names |
 | `wifi_names/add` | POST | `router` (id or `all`), `name`, `type`, `psk`, `band` | |
 | `map` | GET | admin: `seller` | access points with position, status, sales today; `public_map_url` |
@@ -128,7 +130,7 @@ Tokens last 90 days after their last use and are revoked when the password chang
 | Route | Method | Body / query | Notes |
 |---|---|---|---|
 | `packages` | GET | – | + `unused_vouchers` |
-| `packages/save` | POST | `id` (edit), `name`, `description`, `price`, `duration_minutes`, `time_mode` = continuous / online, `data_limit_mb`, `speed_down_mbps`, `speed_up_mbps`, `max_devices` (1–10), `validity_days`, `show_on_portal`, `is_active`, `sort_order`, `device_id` (0 = all routers) | edit: send only changes |
+| `packages/save` | POST | `id` (edit), `name`, `description`, `price`, `duration_minutes`, `time_mode` = continuous / online, `data_limit_mb`, `speed_down_mbps`, `speed_up_mbps`, `max_devices` (1–10), `validity_days`, `show_on_portal`, `is_active`, `sort_order`, `device_id` (0 = all routers), **v1.1** fair usage: `fup_mb` (0 = off), `fup_down_mbps`, `fup_up_mbps` | edit: send only changes |
 | `packages/delete` | POST | `id` | |
 | `vouchers` | GET | `status` = available / sold / active / expired / exhausted / blocked / cancelled, `batch`, `q`, `package_id`, paging | + `counts`, `remaining_seconds` |
 | `vouchers/get` | GET | `id` or `code` | devices, sessions, adjustments, `qr_url` |
@@ -153,7 +155,9 @@ Tokens last 90 days after their last use and are revoked when the password chang
 | `sessions/bulk_adjust` | POST | `voucher_ids` (array), `minutes`, `reason` | |
 | `sessions/block` | POST | `mac`, `reason` | |
 | `sessions/unblock` | POST | `id` (from blocked list) | |
+| `sessions/speed` | POST | `voucher_id`, `down`, `up` (Mbps, 0 = no limit) **or** `reset: true` (back to the package speed) | **v1.1** speed of ONE user; the phone is reconnected. Sessions carry `speed` = {down, up, source = package / fup / custom, label} |
 | `export/sessions` | GET | – | CSV |
+| `export/report_pdf` | GET | same as `reports` (`type`, `id`, `period`, `from`, `to`) | **v1.1** the report as a PDF file (`application/pdf`) |
 | `customers` | GET | `q` (phone), paging; admin: `seller` | phone, purchases, total, last package |
 | `adjustments` | GET | `q`, paging | time changes history |
 
@@ -207,6 +211,9 @@ Tokens last 90 days after their last use and are revoked when the password chang
 | `admin/broadcast` 🔓 | POST | `title`, `message` |
 | `admin/sms_credit` 🔓 | POST | `seller`, `n` (+/−), `note` |
 | `admin/inbox` 🔓 | GET | `q` (**live**) |
+| `admin/sms_after_sale` 🔓 | GET | – → `enabled`, `always`, `template`, `sms_ready`, `sent_this_month` |
+| `admin/sms_after_sale/save` 🔓 | POST | `enabled` (true/false), `always`, `template` (must contain `{code}`) — platform SMS to the clients of every seller after each sale |
+| `admin/radius_servers` 🔓 | GET | – → RADIUS servers routers can choose, `external_url`, `ssid_radius_only` |
 
 Admins can also use every seller route; many accept `seller=ID`.
 

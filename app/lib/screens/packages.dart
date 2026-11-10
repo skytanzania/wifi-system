@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../ui.dart';
+import 'home.dart';
 
 class PackagesScreen extends StatefulWidget {
   const PackagesScreen({super.key});
@@ -20,7 +21,7 @@ class _PackagesScreenState extends State<PackagesScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Packages')),
+        appBar: skyBar('Packages'),
         floatingActionButton: FloatingActionButton.extended(onPressed: () => _open(), icon: const Icon(Icons.add), label: const Text('Package')),
         body: AsyncPage<List<dynamic>>(
           key: _k,
@@ -51,7 +52,7 @@ class _PackagesScreenState extends State<PackagesScreen> {
                         Text(money(p['price']), style: const TextStyle(color: C.amber, fontWeight: FontWeight.w800)),
                         Text(
                             '${toInt(p['data_limit_mb']) > 0 ? '${toInt(p['data_limit_mb'])} MB' : 'Unlimited'} • ${toInt(p['max_devices'])} device(s) • ${toInt(p['unused_vouchers'])} unused voucher(s)',
-                            style: const TextStyle(color: C.muted, fontSize: 12)),
+                            style: TextStyle(color: C.muted, fontSize: 12)),
                       ]),
                     ),
                     Column(children: [
@@ -178,7 +179,7 @@ class _PackageFormScreenState extends State<PackageFormScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(widget.edit == null ? 'New package' : 'Edit package'), actions: [
+        appBar: skyBar(widget.edit == null ? 'New package' : 'Edit package', actions: [
           if (widget.edit != null) IconButton(icon: const Icon(Icons.delete_outline, color: C.red), onPressed: _delete),
         ]),
         body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 40), children: [

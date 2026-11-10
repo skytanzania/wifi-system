@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../main.dart';
 import '../ui.dart';
+import 'home.dart';
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -17,7 +18,7 @@ class _AdminInbox extends StatelessWidget {
   const _AdminInbox();
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Messages')),
+        appBar: skyBar('Messages'),
         body: AsyncPage<Map<String, dynamic>>(
           load: () => Api.I.getMap('messages'),
           build: (ctx, d, reload) {
@@ -42,11 +43,11 @@ class _AdminInbox extends StatelessWidget {
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(toStr(c['name']), style: const TextStyle(fontWeight: FontWeight.w800)),
-                          Text('${c['last_from_admin'] == true ? 'You: ' : ''}${toStr(c['last'])}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                          Text('${c['last_from_admin'] == true ? 'You: ' : ''}${toStr(c['last'])}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: C.muted, fontSize: 12.5)),
                         ]),
                       ),
                       Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                        Text(fmtDate(c['last_at']), style: const TextStyle(color: C.muted, fontSize: 11)),
+                        Text(fmtDate(c['last_at']), style: TextStyle(color: C.muted, fontSize: 11)),
                         if (toInt(c['unread']) > 0) Badge(label: Text('${toInt(c['unread'])}')),
                       ]),
                     ]),
@@ -162,7 +163,7 @@ class _ChatThreadState extends State<ChatThread> {
         appBar: AppBar(
           title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(widget.title),
-            if (_status.isNotEmpty) Text(_status, style: const TextStyle(fontSize: 12, color: C.muted)),
+            if (_status.isNotEmpty) Text(_status, style: TextStyle(fontSize: 12, color: C.muted)),
           ]),
         ),
         body: Column(children: [
@@ -185,7 +186,7 @@ class _ChatThreadState extends State<ChatThread> {
                                 if (showDay)
                                   Padding(
                                     padding: const EdgeInsets.symmetric(vertical: 8),
-                                    child: Text(toStr(m['day']), style: const TextStyle(color: C.muted, fontSize: 11.5)),
+                                    child: Text(toStr(m['day']), style: TextStyle(color: C.muted, fontSize: 11.5)),
                                   ),
                                 Align(
                                   alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
@@ -266,7 +267,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   final _k = GlobalKey<PagedListState>();
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Notifications'), actions: [
+        appBar: skyBar('Notifications', actions: [
           TextButton(
             onPressed: () async {
               await runAction(context, 'notifications/read_all', {}, popup: false);
@@ -302,9 +303,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(toStr(n['title']), style: TextStyle(fontWeight: unread ? FontWeight.w800 : FontWeight.w600)),
                     const SizedBox(height: 2),
-                    Text(toStr(n['message']), maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: C.muted, fontSize: 13)),
+                    Text(toStr(n['message']), maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: C.muted, fontSize: 13)),
                     const SizedBox(height: 4),
-                    Text(fmtDate(n['created_at']), style: const TextStyle(color: C.muted, fontSize: 11)),
+                    Text(fmtDate(n['created_at']), style: TextStyle(color: C.muted, fontSize: 11)),
                   ]),
                 ),
               ]),

@@ -88,10 +88,11 @@ class Api {
     await p.setString('api_base', base);
   }
 
-  Future<void> saveToken(String? t) async {
+  /// [persist] = false ("Keep me logged in" unticked): the token lives only until the app is closed.
+  Future<void> saveToken(String? t, {bool persist = true}) async {
     token = t;
     try {
-      if (t == null) {
+      if (t == null || !persist) {
         await _secure.delete(key: 'token');
       } else {
         await _secure.write(key: 'token', value: t);

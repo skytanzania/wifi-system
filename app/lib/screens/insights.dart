@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../main.dart';
 import '../ui.dart';
+import 'home.dart';
 
 class InsightsScreen extends StatefulWidget {
   const InsightsScreen({super.key});
@@ -16,8 +17,9 @@ class _InsightsScreenState extends State<InsightsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Insights')),
+        appBar: skyBar('Insights'),
         body: AsyncPage<Map<String, dynamic>>(
+          skeleton: const SkeletonDashboard(),
           key: _k,
           load: () => Api.I.getMap('insights'),
           build: (ctx, d, reload) {
@@ -57,7 +59,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                     child: LinearProgressIndicator(value: pct / 100, minHeight: 12, backgroundColor: C.card2, color: pct >= 100 ? C.green : C.amber),
                   ),
                   const SizedBox(height: 8),
-                  Text('${pct.toStringAsFixed(0)}% • day ${toInt(g['day'])} of ${toInt(g['days'])} • at this pace ${money(g['projected'])}', style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                  Text('${pct.toStringAsFixed(0)}% • day ${toInt(g['day'])} of ${toInt(g['days'])} • at this pace ${money(g['projected'])}', style: TextStyle(color: C.muted, fontSize: 12.5)),
                   if (toDouble(g['need_per_day']) > 0) Text('Sell about ${money(g['need_per_day'])} per day to reach it.', style: const TextStyle(color: C.amber, fontSize: 12.5)),
                 ]),
               ),
@@ -111,7 +113,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Text(toStr(r['device_name']), style: const TextStyle(fontWeight: FontWeight.w800)),
-                            Text('Uptime ${toDouble(r['uptime']).toStringAsFixed(1)}% • ${toInt(r['customers'])} customers • ${fmtBytes(r['bytes'])}', style: const TextStyle(color: C.muted, fontSize: 12)),
+                            Text('Uptime ${toDouble(r['uptime']).toStringAsFixed(1)}% • ${toInt(r['customers'])} customers • ${fmtBytes(r['bytes'])}', style: TextStyle(color: C.muted, fontSize: 12)),
                           ]),
                         ),
                         Text(money(r['sales']), style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -135,7 +137,7 @@ class _TopSellersScreenState extends State<TopSellersScreen> {
   String _period = '30d';
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Top sellers')),
+        appBar: skyBar('Top sellers'),
         body: AsyncPage<Map<String, dynamic>>(
           key: ValueKey(_period),
           load: () => Api.I.getMap('top_sellers', {'period': _period}),
@@ -179,7 +181,7 @@ class _TopSellersScreenState extends State<TopSellersScreen> {
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text('${toStr(s['name'])}${s['me'] == true ? ' (you)' : ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                          Text('${toInt(s['sales'])} sales • ${toInt(s['routers'])} routers • ${toInt(s['customers'])} customers', style: const TextStyle(color: C.muted, fontSize: 12)),
+                          Text('${toInt(s['sales'])} sales • ${toInt(s['routers'])} routers • ${toInt(s['customers'])} customers', style: TextStyle(color: C.muted, fontSize: 12)),
                         ]),
                       ),
                       if (s['total'] != null) Text(money(s['total']), style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -214,8 +216,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Reports')),
+        appBar: skyBar('Reports'),
         body: AsyncPage<Map<String, dynamic>>(
+          skeleton: const SkeletonDashboard(),
           key: ValueKey('$_type|$_period|$_id'),
           load: () => Api.I.getMap('reports', {'type': _type, 'period': _period, if (_type == 'router' && _id > 0) 'id': _id}),
           build: (ctx, d, reload) {
@@ -256,7 +259,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 ],
               ]),
               const SizedBox(height: 6),
-              Text(toStr(d['label']), style: const TextStyle(color: C.muted)),
+              Text(toStr(d['label']), style: TextStyle(color: C.muted)),
               const SizedBox(height: 10),
               GridView.count(
                 crossAxisCount: 2,

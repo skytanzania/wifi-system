@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../ui.dart';
+import 'home.dart';
 import 'messages.dart';
 import 'routers.dart';
 
@@ -39,8 +40,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Administrator'),
+        appBar: skyBar('Administrator',
           actions: [IconButton(tooltip: 'Message all sellers', icon: const Icon(Icons.campaign_outlined), onPressed: _broadcast)],
           bottom: TabBar(controller: _tc, isScrollable: true, tabAlignment: TabAlignment.start, tabs: const [
             Tab(text: 'Overview'),
@@ -58,6 +58,7 @@ class _Overview extends StatelessWidget {
   const _Overview();
   @override
   Widget build(BuildContext context) => AsyncPage<Map<String, dynamic>>(
+    skeleton: const SkeletonDashboard(),
         load: () => Api.I.getMap('admin/stats'),
         build: (ctx, d, reload) {
           final p = toMap(d['platform']);
@@ -70,7 +71,7 @@ class _Overview extends StatelessWidget {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Text('Platform earnings', style: TextStyle(color: Color(0xFFFDE68A))),
                 Text(money(p['total']), style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900)),
-                Text('This month ${money(p['month'])} • today ${money(p['today'])}', style: const TextStyle(color: C.muted)),
+                Text('This month ${money(p['month'])} • today ${money(p['today'])}', style: TextStyle(color: C.muted)),
                 const SizedBox(height: 8),
                 Text('Mobile money ${money(p['mm'])} • vouchers ${money(p['vc'])} • withdrawals ${money(p['wd'])} • SMS ${money(p['sms'])}', style: const TextStyle(fontSize: 12.5)),
               ]),
@@ -122,7 +123,7 @@ class _Overview extends StatelessWidget {
       );
 
   static Widget _k(String k, String v) => Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        Text(k, style: const TextStyle(color: C.muted, fontSize: 12)),
+        Text(k, style: TextStyle(color: C.muted, fontSize: 12)),
         Text(v, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
       ]);
 }
@@ -205,7 +206,7 @@ class _UsersState extends State<_Users> with AutomaticKeepAliveClientMixin {
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text('${toStr(u['full_name'])} • @${toStr(u['username'])}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                    Text('${toStr(u['phone'])} • ${toInt(u['devs'])} router(s) • ${toInt(u['active_sessions'])} online', style: const TextStyle(color: C.muted, fontSize: 12)),
+                    Text('${toStr(u['phone'])} • ${toInt(u['devs'])} router(s) • ${toInt(u['active_sessions'])} online', style: TextStyle(color: C.muted, fontSize: 12)),
                     Text('Balance ${money(u['balance'])} • SMS ${toInt(u['sms_balance'])} • seen ${ago(u['last_seen_at'])}', style: const TextStyle(fontSize: 12)),
                   ]),
                 ),
@@ -248,7 +249,7 @@ class _AllRoutersState extends State<_AllRouters> with AutomaticKeepAliveClientM
           route: 'admin/routers',
           query: {'q': _q},
           item: (ctx, r, reload) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Padding(padding: const EdgeInsets.only(left: 6, bottom: 4), child: Text('Seller: ${toStr(r['seller'])}', style: const TextStyle(color: C.muted, fontSize: 12))),
+            Padding(padding: const EdgeInsets.only(left: 6, bottom: 4), child: Text('Seller: ${toStr(r['seller'])}', style: TextStyle(color: C.muted, fontSize: 12))),
             RouterTile(r, onChanged: reload),
           ]),
         ),
@@ -270,7 +271,7 @@ class _Withdrawals extends StatelessWidget {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('@${toStr(w['username'])} • ${money(w['amount'])}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                Text('${toStr(w['method']).toUpperCase()} ${toStr(w['account_number'])} • net ${money(w['net_amount'])}', style: const TextStyle(color: C.muted, fontSize: 12)),
+                Text('${toStr(w['method']).toUpperCase()} ${toStr(w['account_number'])} • net ${money(w['net_amount'])}', style: TextStyle(color: C.muted, fontSize: 12)),
                 Text(fmtDate(w['created_at']), style: const TextStyle(fontSize: 12)),
               ]),
             ),
@@ -313,7 +314,7 @@ class _CommissionsState extends State<_Commissions> with AutomaticKeepAliveClien
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('@${toStr(i['username'])} • ${toStr(i['period_label'])}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                  Text('Sales ${money(i['sales_amount'])} • ${toDouble(i['percent']).toStringAsFixed(0)}% • due ${fmtDate(i['due_at'], time: false)}', style: const TextStyle(color: C.muted, fontSize: 12)),
+                  Text('Sales ${money(i['sales_amount'])} • ${toDouble(i['percent']).toStringAsFixed(0)}% • due ${fmtDate(i['due_at'], time: false)}', style: TextStyle(color: C.muted, fontSize: 12)),
                 ]),
               ),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [

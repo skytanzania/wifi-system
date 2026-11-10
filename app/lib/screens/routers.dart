@@ -46,20 +46,21 @@ class RouterTile extends StatelessWidget {
               Expanded(child: Text(toStr(r['device_name']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
             ]),
             const SizedBox(height: 3),
-            Text('${toStr(r['model'])} • ${toStr(r['ssid'])}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: C.muted, fontSize: 12.5)),
+            Text('${toStr(r['model'])} • ${toStr(r['ssid'])}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: C.muted, fontSize: 12.5)),
             Text(on ? 'Online • ${toInt(r['active_sessions'])} user(s)' : 'Offline • last seen ${ago(r['last_seen'])}',
                 style: TextStyle(color: on ? C.green : C.muted, fontSize: 12)),
           ]),
         ),
         if (!active) const StatusChip('blocked', label: 'Stopped'),
-        const Icon(Icons.chevron_right, color: C.muted),
+        Icon(Icons.chevron_right, color: C.muted),
       ]),
     );
   }
 }
 
 class RoutersScreen extends StatefulWidget {
-  const RoutersScreen({super.key});
+  final bool hotspot; // the website's "Hotspot" page: the same routers, opened to provision & connect
+  const RoutersScreen({super.key, this.hotspot = false});
   @override
   State<RoutersScreen> createState() => _RoutersScreenState();
 }
@@ -68,7 +69,7 @@ class _RoutersScreenState extends State<RoutersScreen> {
   final _k = GlobalKey<AsyncPageState<List<dynamic>>>();
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Routers'), actions: [
+        appBar: skyBar(widget.hotspot ? 'Hotspot' : 'Routers', actions: [
           IconButton(
             tooltip: 'Refresh all statuses',
             icon: const Icon(Icons.sync),
@@ -90,6 +91,14 @@ class _RoutersScreenState extends State<RoutersScreen> {
           key: _k,
           load: () => Api.I.getList('routers'),
           build: (ctx, list, reload) => [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(2, 0, 2, 12),
+              child: Text(
+                  widget.hotspot
+                      ? 'Open a router to provision & connect it, start or stop its hotspot, and copy its RADIUS settings.'
+                      : 'Every router (access point) you install is listed here. Add a router first, then open Hotspot to provision and connect it.',
+                  style: TextStyle(color: C.muted, fontSize: 13.5)),
+            ),
             if (list.isEmpty) const EmptyView('No routers yet. Tap "Add router".', icon: Icons.router_outlined),
             for (final r in list) Padding(padding: const EdgeInsets.only(bottom: 10), child: RouterTile(toMap(r), onChanged: reload)),
           ],
@@ -225,7 +234,7 @@ class _RouterFormScreenState extends State<RouterFormScreen> {
   Widget build(BuildContext context) {
     final models = _models.where((m) => m['brand'] == _brand).toList();
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit router' : 'Add router')),
+      appBar: skyBar(_isEdit ? 'Edit router' : 'Add router'),
       body: _loading
           ? loader
           : _err != null
@@ -265,7 +274,7 @@ class _RouterFormScreenState extends State<RouterFormScreen> {
                               Expanded(
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Text(toStr(m['label']), style: const TextStyle(fontWeight: FontWeight.w700)),
-                                  Text(toStr(m['description']), style: const TextStyle(color: C.muted, fontSize: 12)),
+                                  Text(toStr(m['description']), style: TextStyle(color: C.muted, fontSize: 12)),
                                 ]),
                               ),
                             ]),
@@ -425,10 +434,11 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(_d.isEmpty ? 'Router' : toStr(_d['device_name'])), actions: [
+        appBar: skyBar(_d.isEmpty ? 'Router' : toStr(_d['device_name']), actions: [
           IconButton(icon: const Icon(Icons.more_vert), onPressed: _d.isEmpty ? null : _menu),
         ]),
         body: AsyncPage<Map<String, dynamic>>(
+          skeleton: const SkeletonDetail(),
           key: _k,
           load: () async {
             final d = await Api.I.getMap('routers/get', {'id': widget.id});
@@ -454,7 +464,7 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(toStr(d['model']), style: const TextStyle(fontWeight: FontWeight.w800)),
-                        Text(toStr(d['ap_mac']), style: const TextStyle(color: C.muted, fontFamily: 'monospace')),
+                        Text(toStr(d['ap_mac']), style: TextStyle(color: C.muted, fontFamily: kMono)),
                       ]),
                     ),
                     StatusChip(on ? 'online' : 'offline'),
@@ -509,7 +519,7 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
                         contentPadding: EdgeInsets.zero,
                         leading: Icon(toStr(h['status']) == 'ok' ? Icons.check_circle : Icons.error_outline, color: toStr(h['status']) == 'ok' ? C.green : C.amber),
                         title: Text(toStr(h['msg'], toStr(h['key']))),
-                        subtitle: toStr(h['fix']).isEmpty ? null : Text(toStr(h['fix']), style: const TextStyle(color: C.muted)),
+                        subtitle: toStr(h['fix']).isEmpty ? null : Text(toStr(h['fix']), style: TextStyle(color: C.muted)),
                       ),
                   ]),
                 ),
@@ -536,7 +546,7 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
               ),
               if (sheet.isNotEmpty) ...[
                 SectionTitle('Router settings to copy', trailing: TextButton.icon(onPressed: () => copyText(ctx, sheet, what: 'Settings copied'), icon: const Icon(Icons.copy, size: 18), label: const Text('Copy'))),
-                GlowCard(child: SelectableText(sheet, style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5, height: 1.45))),
+                GlowCard(child: SelectableText(sheet, style: const TextStyle(fontFamily: kMono, fontSize: 12.5, height: 1.45))),
               ],
               if (rad.isNotEmpty) ...[
                 const SectionTitle('RADIUS settings'),
@@ -583,7 +593,7 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
                           Expanded(
                             child: Text('${cap(toStr(h['action']))}${toStr(h['message']).isNotEmpty ? ' — ${toStr(h['message'])}' : ''}', style: const TextStyle(fontSize: 13)),
                           ),
-                          Text(fmtDate(h['created_at']), style: const TextStyle(color: C.muted, fontSize: 11.5)),
+                          Text(fmtDate(h['created_at']), style: TextStyle(color: C.muted, fontSize: 11.5)),
                         ]),
                       ),
                   ]),
@@ -595,7 +605,7 @@ class _RouterDetailScreenState extends State<RouterDetailScreen> {
       );
 
   Widget _num(String k, String v) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(k, style: const TextStyle(color: C.muted, fontSize: 11.5)),
+        Text(k, style: TextStyle(color: C.muted, fontSize: 11.5)),
         Text(v, style: const TextStyle(fontWeight: FontWeight.w800)),
       ]);
 }
@@ -725,7 +735,7 @@ class _WifiNamesScreenState extends State<WifiNamesScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('WiFi names')),
+        appBar: skyBar('WiFi names'),
         floatingActionButton: FloatingActionButton.extended(onPressed: _add, icon: const Icon(Icons.add), label: const Text('WiFi name')),
         body: AsyncPage<List<dynamic>>(
           key: _k,
@@ -763,7 +773,7 @@ class MapScreen extends StatelessWidget {
   const MapScreen({super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Access points map')),
+        appBar: skyBar('Access points map'),
         body: AsyncPage<Map<String, dynamic>>(
           load: () => Api.I.getMap('map'),
           build: (ctx, d, reload) {
@@ -795,7 +805,7 @@ class MapScreen extends StatelessWidget {
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(toStr(p['name']), style: const TextStyle(fontWeight: FontWeight.w800)),
-                          Text('${toStr(p['ssid'])} • ${toStr(p['loc'])}', style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                          Text('${toStr(p['ssid'])} • ${toStr(p['loc'])}', style: TextStyle(color: C.muted, fontSize: 12.5)),
                           Text('${toInt(p['live'])} online • today ${money(p['today'])}${p['pub'] == true ? ' • public' : ''}', style: const TextStyle(fontSize: 12.5)),
                         ]),
                       ),

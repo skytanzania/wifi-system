@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../ui.dart';
+import 'home.dart';
 
 class ClientsTab extends StatefulWidget {
   const ClientsTab({super.key});
@@ -87,11 +88,17 @@ class _SessionsViewState extends State<SessionsView> with AutomaticKeepAliveClie
     final per = toMap(_metrics['sessions']);
     return Column(children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-        child: TextField(
-          decoration: const InputDecoration(hintText: 'Search code, phone, MAC, router', prefixIcon: Icon(Icons.search), isDense: true),
-          onSubmitted: (v) => setState(() => _q = v.trim()),
-        ),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+        child: Row(children: [
+          Expanded(
+            child: TextField(
+              decoration: const InputDecoration(hintText: 'Search code, phone, MAC, router', prefixIcon: Icon(Icons.search), isDense: true),
+              onSubmitted: (v) => setState(() => _q = v.trim()),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconBtn(Icons.block, color: C.red, tooltip: 'Blocked devices', onTap: () => push(context, Scaffold(appBar: skyBar('Blocked devices'), body: const BlockedView()))),
+        ]),
       ),
       if (tot.isNotEmpty)
         Padding(
@@ -99,9 +106,9 @@ class _SessionsViewState extends State<SessionsView> with AutomaticKeepAliveClie
           child: Row(children: [
             const Icon(Icons.speed, size: 18, color: C.cyan),
             const SizedBox(width: 6),
-            Text('↓ ${fmtBytes(tot['down'])}/s   ↑ ${fmtBytes(tot['up'])}/s', style: const TextStyle(color: C.muted, fontSize: 12.5)),
+            Text('↓ ${fmtBytes(tot['down'])}/s   ↑ ${fmtBytes(tot['up'])}/s', style: TextStyle(color: C.muted, fontSize: 12.5)),
             const Spacer(),
-            Text('updated ${toStr(_metrics['at'])}', style: const TextStyle(color: C.muted, fontSize: 11.5)),
+            Text('updated ${toStr(_metrics['at'])}', style: TextStyle(color: C.muted, fontSize: 11.5)),
           ]),
         ),
       Expanded(
@@ -121,15 +128,15 @@ class _SessionsViewState extends State<SessionsView> with AutomaticKeepAliveClie
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(toStr(s['code'], toStr(s['username'])), style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w800)),
-                    Text('${toStr(s['package_name'], '—')} • ${toStr(s['device_name'], '')}', style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                    Text(toStr(s['code'], toStr(s['username'])), style: const TextStyle(fontFamily: kMono, fontWeight: FontWeight.w800)),
+                    Text('${toStr(s['package_name'], '—')} • ${toStr(s['device_name'], '')}', style: TextStyle(color: C.muted, fontSize: 12.5)),
                     Text(
                         '${toStr(s['phone']).isNotEmpty ? '${toStr(s['phone'])} • ' : ''}${toStr(s['mac'])}${s['remaining_seconds'] != null ? ' • ${fmtSecs(s['remaining_seconds'])} left' : ''}',
                         style: const TextStyle(fontSize: 12)),
                     if (m.isNotEmpty) Text('↓ ${fmtBytes(m['down'])}/s ↑ ${fmtBytes(m['up'])}/s', style: const TextStyle(color: C.cyan, fontSize: 11.5)),
                   ]),
                 ),
-                const Icon(Icons.more_vert, color: C.muted),
+                Icon(Icons.more_vert, color: C.muted),
               ]),
             );
           },
@@ -223,7 +230,7 @@ class _CustomersViewState extends State<CustomersView> with AutomaticKeepAliveCl
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(toStr(c['phone']), style: const TextStyle(fontWeight: FontWeight.w800)),
-                  Text('${toInt(c['n'])} purchase(s) • last ${fmtDate(c['last_at'])}', style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                  Text('${toInt(c['n'])} purchase(s) • last ${fmtDate(c['last_at'])}', style: TextStyle(color: C.muted, fontSize: 12.5)),
                   Text(toStr(c['last_package']), style: const TextStyle(fontSize: 12)),
                 ]),
               ),
@@ -254,9 +261,9 @@ class BlockedView extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(toStr(b['mac']), style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w800)),
+                      Text(toStr(b['mac']), style: const TextStyle(fontFamily: kMono, fontWeight: FontWeight.w800)),
                       Text('${toStr(b['reason'])} • ${fmtDate(b['created_at'])}${toBool(b['platform_wide']) ? ' • whole platform' : ''}',
-                          style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                          style: TextStyle(color: C.muted, fontSize: 12.5)),
                     ]),
                   ),
                   if (!toBool(b['platform_wide']))
@@ -277,5 +284,36 @@ class BlockedView extends StatelessWidget {
 class CustomersScreen extends StatelessWidget {
   const CustomersScreen({super.key});
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Customers')), body: const CustomersView());
+  Widget build(BuildContext context) => Scaffold(appBar: skyBar('Customers'), body: const CustomersView());
+}
+
+
+/// The website's Time Adjustments page (time added to / removed from vouchers).
+class AdjustmentsScreen extends StatelessWidget {
+  const AdjustmentsScreen({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: skyBar('Time Adjustments'),
+        body: PagedList(
+          route: 'adjustments',
+          empty: 'No time changes yet.',
+          item: (ctx, a, reload) {
+            final m = toInt(a['minutes']);
+            return GlowCard(
+              padding: const EdgeInsets.all(14),
+              child: Row(children: [
+                Icon(m >= 0 ? Icons.add_circle_outline : Icons.remove_circle_outline, color: m >= 0 ? C.green : C.red),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(toStr(a['code']), style: mono(size: 14.5, weight: FontWeight.w800)),
+                    Text('${toStr(a['reason'], '—')} • ${fmtDate(a['created_at'])}', style: TextStyle(color: C.muted, fontSize: 12.5)),
+                  ]),
+                ),
+                Text('${m >= 0 ? '+' : ''}$m min', style: TextStyle(fontWeight: FontWeight.w800, color: m >= 0 ? C.green : C.red)),
+              ]),
+            );
+          },
+        ),
+      );
 }

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../main.dart';
 import '../ui.dart';
+import 'home.dart';
 
 class SmsScreen extends StatefulWidget {
   const SmsScreen({super.key});
@@ -114,8 +115,9 @@ class _SmsScreenState extends State<SmsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('SMS')),
+        appBar: skyBar('SMS'),
         body: AsyncPage<PageResult>(
+          skeleton: const SkeletonDetail(),
           key: _k,
           load: () => Api.I.page('sms', 1),
           build: (ctx, r, reload) {
@@ -133,7 +135,7 @@ class _SmsScreenState extends State<SmsScreen> {
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(x['free'] == true ? 'Free SMS (administrator)' : 'SMS balance', style: const TextStyle(color: C.muted)),
+                      Text(x['free'] == true ? 'Free SMS (administrator)' : 'SMS balance', style: TextStyle(color: C.muted)),
                       Text(x['free'] == true ? 'Unlimited' : '${thousands(toInt(x['balance']))} SMS', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
                       if (x['enabled'] == false) const Text('Sending is switched off by the administrator.', style: TextStyle(color: C.amber, fontSize: 12.5)),
                     ]),
@@ -167,7 +169,7 @@ class _SmsScreenState extends State<SmsScreen> {
                             const SizedBox(height: 4),
                             Text(money(b['price']), style: const TextStyle(color: C.amber, fontWeight: FontWeight.w800)),
                             const Spacer(),
-                            Text('${toDouble(b['unit']).toStringAsFixed(0)} per SMS', style: const TextStyle(color: C.muted, fontSize: 11.5)),
+                            Text('${toDouble(b['unit']).toStringAsFixed(0)} per SMS', style: TextStyle(color: C.muted, fontSize: 11.5)),
                           ]),
                         ),
                       ),

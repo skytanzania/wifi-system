@@ -7,6 +7,7 @@ import '../api.dart';
 import '../main.dart';
 import '../ui.dart';
 import 'auth.dart';
+import 'home.dart';
 import 'messages.dart';
 
 class MoneyTab extends StatefulWidget {
@@ -116,8 +117,8 @@ class OrderTile extends StatelessWidget {
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${toStr(o['package_name'], toStr(o['pkg_name'], 'Package'))} • ${toStr(o['phone'])}', style: const TextStyle(fontWeight: FontWeight.w800)),
-            Text('${toStr(o['order_ref'])} • ${fmtDate(o['created_at'])}', style: const TextStyle(color: C.muted, fontSize: 12)),
-            if (toStr(o['code']).isNotEmpty) Text('Voucher ${toStr(o['code'])}', style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5, color: C.cyan)),
+            Text('${toStr(o['order_ref'])} • ${fmtDate(o['created_at'])}', style: TextStyle(color: C.muted, fontSize: 12)),
+            if (toStr(o['code']).isNotEmpty) Text('Voucher ${toStr(o['code'])}', style: const TextStyle(fontFamily: kMono, fontSize: 12.5, color: C.cyan)),
           ]),
         ),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -147,8 +148,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Payment')),
+        appBar: skyBar('Payment'),
         body: AsyncPage<Map<String, dynamic>>(
+          skeleton: const SkeletonDetail(),
           key: _k,
           load: () => Api.I.getMap('orders/get', {'id': widget.id}),
           build: (ctx, o, reload) {
@@ -211,7 +213,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ),
               ]),
               if (!Session.isAdmin && st != 'paid')
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(top: 12),
                   child: Text('Only the administrator can mark a payment as paid. Ask Sonic Pesa first; if the customer really paid, send the reference to the administrator.',
                       style: TextStyle(color: C.muted, fontSize: 12.5)),
@@ -291,7 +293,7 @@ class _LedgerViewState extends State<LedgerView> with AutomaticKeepAliveClientMi
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text('${cap(type)} • ${toStr(t['payment_method'])}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                    Text('${toStr(t['transaction_ref'])} • ${fmtDate(t['created_at'])}', style: const TextStyle(color: C.muted, fontSize: 12)),
+                    Text('${toStr(t['transaction_ref'])} • ${fmtDate(t['created_at'])}', style: TextStyle(color: C.muted, fontSize: 12)),
                   ]),
                 ),
                 Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -313,7 +315,7 @@ class _LedgerViewState extends State<LedgerView> with AutomaticKeepAliveClientMi
 class WithdrawScreen extends StatelessWidget {
   const WithdrawScreen({super.key});
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Withdraw')), body: const WithdrawView());
+  Widget build(BuildContext context) => Scaffold(appBar: skyBar('Withdraw'), body: const WithdrawView());
 }
 
 class WithdrawView extends StatefulWidget {
@@ -368,6 +370,7 @@ class _WithdrawViewState extends State<WithdrawView> with AutomaticKeepAliveClie
   Widget build(BuildContext context) {
     super.build(context);
     return AsyncPage<PageResult>(
+      skeleton: const SkeletonDetail(),
       key: _k,
       load: () => Api.I.page('withdrawals', 1),
       build: (ctx, r, reload) {
@@ -390,8 +393,8 @@ class _WithdrawViewState extends State<WithdrawView> with AutomaticKeepAliveClie
               const Text('Available to withdraw', style: TextStyle(color: Color(0xFFA7F3D0))),
               Text(money(bal), style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900)),
               const SizedBox(height: 4),
-              Text('Minimum ${money(minW)} • fee ${toDouble(rules['fee_percent_shown']).toStringAsFixed(1)}%', style: const TextStyle(color: C.muted, fontSize: 12.5)),
-              const Text('Only mobile money sales can be withdrawn — voucher cash is already in your shop.', style: TextStyle(color: C.muted, fontSize: 12)),
+              Text('Minimum ${money(minW)} • fee ${toDouble(rules['fee_percent_shown']).toStringAsFixed(1)}%', style: TextStyle(color: C.muted, fontSize: 12.5)),
+              Text('Only mobile money sales can be withdrawn — voucher cash is already in your shop.', style: TextStyle(color: C.muted, fontSize: 12)),
             ]),
           ),
           const SectionTitle('Request withdrawal'),
@@ -421,7 +424,7 @@ class _WithdrawViewState extends State<WithdrawView> with AutomaticKeepAliveClie
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text('${money(w['amount'])} → ${toStr(w['account_number'])}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                      Text('${toStr(w['method']).toUpperCase()} • net ${money(w['net_amount'])} • ${fmtDate(w['created_at'])}', style: const TextStyle(color: C.muted, fontSize: 12)),
+                      Text('${toStr(w['method']).toUpperCase()} • net ${money(w['net_amount'])} • ${fmtDate(w['created_at'])}', style: TextStyle(color: C.muted, fontSize: 12)),
                       if (toStr(w['admin_notes']).isNotEmpty) Text(toStr(w['admin_notes']), style: const TextStyle(color: C.amber, fontSize: 12)),
                     ]),
                   ),
@@ -441,7 +444,7 @@ class _WithdrawViewState extends State<WithdrawView> with AutomaticKeepAliveClie
 class CommissionScreen extends StatelessWidget {
   const CommissionScreen({super.key});
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Voucher commission')), body: const CommissionView());
+  Widget build(BuildContext context) => Scaffold(appBar: skyBar('Voucher commission'), body: const CommissionView());
 }
 
 class CommissionView extends StatefulWidget {
@@ -517,6 +520,7 @@ class _CommissionViewState extends State<CommissionView> with AutomaticKeepAlive
   Widget build(BuildContext context) {
     super.build(context);
     return AsyncPage<Map<String, dynamic>>(
+      skeleton: const SkeletonDetail(),
       key: _k,
       load: () => Api.I.getMap('commission'),
       build: (ctx, d, reload) {
@@ -532,11 +536,11 @@ class _CommissionViewState extends State<CommissionView> with AutomaticKeepAlive
           GlowCard(
             glow: owed > 0 ? C.amber : C.green,
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(owed > 0 ? 'Commission to pay' : 'Nothing to pay', style: const TextStyle(color: C.muted)),
+              Text(owed > 0 ? 'Commission to pay' : 'Nothing to pay', style: TextStyle(color: C.muted)),
               Text(money(owed), style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900)),
               const SizedBox(height: 4),
               Text('${toDouble(d['percent']).toStringAsFixed(toDouble(d['percent']) % 1 == 0 ? 0 : 1)}% of voucher sales • paid so far ${money(d['paid_total'])}',
-                  style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                  style: TextStyle(color: C.muted, fontSize: 12.5)),
               if (d['locked'] == true || d['admin_locked'] == true)
                 const Padding(
                   padding: EdgeInsets.only(top: 8),
@@ -583,7 +587,7 @@ class _CommissionViewState extends State<CommissionView> with AutomaticKeepAlive
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(toStr(i['period_label']), style: const TextStyle(fontWeight: FontWeight.w800)),
-                        Text('${money(i['amount'])} • due ${fmtDate(i['due_at'], time: false)}', style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                        Text('${money(i['amount'])} • due ${fmtDate(i['due_at'], time: false)}', style: TextStyle(color: C.muted, fontSize: 12.5)),
                       ]),
                     ),
                     FilledButton(onPressed: () => _pay(invoice: toInt(i['id'])), child: const Text('Pay')),
@@ -637,8 +641,7 @@ class _LockedScreenState extends State<LockedScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Account locked'),
+        appBar: skyBar('Account locked',
           actions: [
             IconButton(tooltip: 'Messages', icon: const Icon(Icons.chat_bubble_outline), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatScreen()))),
             IconButton(
@@ -680,10 +683,10 @@ class _LockedScreenState extends State<LockedScreen> {
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       const Text('Every menu is disabled except paying the voucher commission.', style: TextStyle(fontWeight: FontWeight.w700)),
-                      if (toStr(d['reason']).isNotEmpty) Text('Reason: ${toStr(d['reason'])}', style: const TextStyle(color: C.muted)),
+                      if (toStr(d['reason']).isNotEmpty) Text('Reason: ${toStr(d['reason'])}', style: TextStyle(color: C.muted)),
                       if (d['hotspot_stopped'] == true) const Text('Your hotspot is stopped until the account is reactivated.', style: TextStyle(color: C.amber, fontSize: 12.5)),
                       if (d['admin_locked'] == true && d['unlocks_when_paid'] != true)
-                        const Text('After paying, ask the administrator to reactivate the account (Messages).', style: TextStyle(color: C.muted, fontSize: 12.5)),
+                        Text('After paying, ask the administrator to reactivate the account (Messages).', style: TextStyle(color: C.muted, fontSize: 12.5)),
                     ]),
                   ),
                 ]),
@@ -693,4 +696,11 @@ class _LockedScreenState extends State<LockedScreen> {
           const Expanded(child: CommissionView(locked: true)),
         ]),
       );
+}
+
+/// The website's Transactions page.
+class TransactionsScreen extends StatelessWidget {
+  const TransactionsScreen({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: skyBar('Transactions'), body: const LedgerView());
 }

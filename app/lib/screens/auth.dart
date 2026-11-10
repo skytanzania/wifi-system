@@ -1,42 +1,73 @@
 // Sign in, create account, forgot password
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../api.dart';
 import '../main.dart';
 import '../ui.dart';
+import 'home.dart';
 
 Future<String> deviceName() async => 'SKY WIFI app (Android)';
 
-class AuthFrame extends StatelessWidget {
+/// The website's sign-in look: dark background with a soft glow, one centred card, ◐ button top-right.
+class AuthFrame extends StatefulWidget {
   final String title;
   final String subtitle;
   final List<Widget> children;
   final VoidCallback? onLogoLongPress;
   const AuthFrame({super.key, required this.title, required this.subtitle, required this.children, this.onLogoLongPress});
   @override
+  State<AuthFrame> createState() => _AuthFrameState();
+}
+
+class _AuthFrameState extends State<AuthFrame> {
+  @override
   Widget build(BuildContext context) => Scaffold(
         body: Container(
-          decoration: const BoxDecoration(
-            gradient: RadialGradient(center: Alignment(-.8, -1), radius: 1.4, colors: [Color(0xFF14204A), C.bg]),
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: const Alignment(-.9, -1.1),
+              radius: 1.5,
+              colors: C.dark ? [const Color(0xFF101A33), C.bg] : [const Color(0xFFE3EAFB), C.bg],
+            ),
           ),
           child: SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(22),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 440),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    Center(child: GestureDetector(onLongPress: onLogoLongPress, child: const LogoMark(size: 78))),
-                    const SizedBox(height: 18),
-                    Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 6),
-                    Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(color: C.muted)),
-                    const SizedBox(height: 26),
-                    GlowCard(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children)),
-                  ]),
+            child: Stack(children: [
+              Positioned(
+                right: 16,
+                top: 12,
+                child: IconBtn(FontAwesomeIcons.circleHalfStroke, tooltip: 'Dark / light', onTap: () async {
+                  await ThemeCtl.toggle(context);
+                  if (mounted) setState(() {});
+                }),
+              ),
+              Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 64, 16, 24),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(24, 26, 24, 24),
+                      decoration: BoxDecoration(
+                        color: C.card,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(color: C.line2),
+                        boxShadow: [BoxShadow(color: C.dark ? const Color(0xD9000000) : const Color(0x4D101828), blurRadius: 60, spreadRadius: -26, offset: const Offset(0, 24))],
+                      ),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        Center(child: GestureDetector(onLongPress: widget.onLogoLongPress, child: const LogoMark(size: 66))),
+                        const SizedBox(height: 18),
+                        Text(widget.title, textAlign: TextAlign.center, style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: C.text)),
+                        const SizedBox(height: 6),
+                        Text(widget.subtitle, textAlign: TextAlign.center, style: TextStyle(color: C.muted, fontSize: 13)),
+                        const SizedBox(height: 24),
+                        ...widget.children,
+                      ]),
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ]),
           ),
         ),
       );
@@ -53,6 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _p = TextEditingController();
   bool _busy = false;
   bool _show = false;
+  bool _keep = true;
   bool _regOpen = true;
 
   @override
@@ -71,7 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _busy = true);
     try {
       final d = await Api.I.postData('auth/login', {'username': _u.text.trim(), 'password': _p.text, 'device_name': await deviceName(), 'platform': 'android'});
-      await Api.I.saveToken(toStr(d['token']));
+      await Api.I.saveToken(toStr(d['token']), persist: _keep);
       final me = await Session.refresh();
       enterApp(me);
     } catch (e) {
@@ -91,38 +123,57 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) => AuthFrame(
         title: 'SKY WIFI TANZANIA',
-        subtitle: 'Sign in to manage your WiFi hotspot business',
+        subtitle: 'WiFi Seller Platform • Omada EAP225 + RADIUS',
         onLogoLongPress: _server,
         children: [
-          Field(_u, 'Username, phone or e-mail', icon: Icons.person_outline, keyboard: TextInputType.emailAddress),
+          Field(_u, 'Username / Email / Phone', keyboard: TextInputType.emailAddress),
+          Padding(padding: const EdgeInsets.only(bottom: 6, left: 2), child: Text('Password', style: TextStyle(color: C.text, fontWeight: FontWeight.w600, fontSize: 13.5))),
           TextField(
             controller: _p,
             obscureText: !_show,
+            style: TextStyle(color: C.text),
             onSubmitted: (_) => _login(),
-            decoration: InputDecoration(
-              labelText: 'Password',
-              prefixIcon: const Icon(Icons.lock_outline, size: 20),
-              suffixIcon: IconButton(icon: Icon(_show ? Icons.visibility_off : Icons.visibility), onPressed: () => setState(() => _show = !_show)),
-            ),
+            decoration: InputDecoration(suffixIcon: IconButton(icon: Icon(_show ? Icons.visibility_off : Icons.visibility, color: C.muted), onPressed: () => setState(() => _show = !_show))),
           ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ForgotScreen())),
-              child: const Text('Forgot password?'),
-            ),
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () => setState(() => _keep = !_keep),
+            child: Row(children: [
+              Checkbox(value: _keep, onChanged: (v) => setState(() => _keep = v == true), visualDensity: VisualDensity.compact),
+              Text('Keep me logged in', style: TextStyle(color: C.body)),
+            ]),
           ),
-          FilledButton(
-            onPressed: _busy ? null : _login,
-            child: _busy ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white)) : const Text('Sign in'),
-          ),
-          if (_regOpen) ...[
-            const SizedBox(height: 14),
-            OutlinedButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterScreen())),
-              child: const Text('Create a seller account'),
+          const SizedBox(height: 14),
+          GradButton(onPressed: _login, busy: _busy, icon: Icons.login_rounded, label: 'Login'),
+          const SizedBox(height: 18),
+          if (_regOpen)
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Text("Don't have an account? ", style: TextStyle(color: C.muted)),
+              InkWell(
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterScreen())),
+                child: const Text('Register', style: TextStyle(color: Color(0xFF7FA4FF), fontWeight: FontWeight.w600)),
+              ),
+            ]),
+          const SizedBox(height: 10),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            InkWell(
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ForgotScreen())),
+              child: const Row(children: [
+                FaIcon(FontAwesomeIcons.key, size: 12, color: Color(0xFF7FA4FF)),
+                SizedBox(width: 6),
+                Text('Forgot password?', style: TextStyle(color: Color(0xFF7FA4FF))),
+              ]),
             ),
-          ],
+            Text('  ·  ', style: TextStyle(color: C.muted)),
+            InkWell(
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyScreen())),
+              child: Row(children: [
+                FaIcon(FontAwesomeIcons.userShield, size: 12, color: C.muted),
+                const SizedBox(width: 6),
+                Text('Privacy Policy', style: TextStyle(color: C.muted)),
+              ]),
+            ),
+          ]),
         ],
       );
 }
@@ -192,10 +243,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ]),
           const SizedBox(height: 10),
-          FilledButton(
-            onPressed: _busy ? null : _go,
-            child: _busy ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white)) : const Text('Create account'),
-          ),
+          GradButton(onPressed: _go, busy: _busy, icon: Icons.person_add_alt_1, label: 'Create account'),
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('I already have an account')),
         ],
       );
@@ -233,7 +281,7 @@ class _ForgotScreenState extends State<ForgotScreen> {
         subtitle: 'We will send a reset link to your e-mail and phone',
         children: [
           Field(_who, 'Username, phone or e-mail', icon: Icons.person_search_outlined),
-          FilledButton(onPressed: _busy ? null : _go, child: const Text('Send reset link')),
+          GradButton(onPressed: _go, busy: _busy, icon: Icons.mark_email_read_outlined, label: 'Send reset link'),
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Back to sign in')),
         ],
       );
@@ -244,11 +292,12 @@ class PrivacyScreen extends StatelessWidget {
   const PrivacyScreen({super.key, this.askAccept = false});
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Privacy Policy')),
+        appBar: skyBar('Privacy Policy'),
         body: AsyncPage<Map<String, dynamic>>(
+          skeleton: const SkeletonDetail(),
           load: () => Api.I.getMap('privacy'),
           build: (ctx, d, reload) => [
-            Text('Version ${toStr(d['version'])}', style: const TextStyle(color: C.muted)),
+            Text('Version ${toStr(d['version'])}', style: TextStyle(color: C.muted)),
             const SizedBox(height: 12),
             SelectableText(toStr(d['text']), style: const TextStyle(height: 1.5)),
             if (askAccept) ...[

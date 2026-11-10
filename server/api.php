@@ -763,6 +763,32 @@ final class SkyApi
             'unread_notifications' => Notify::unread($uid), 'unread_messages' => Chat::ready() ? Chat::unread($uid, self::isAdm()) : 0,
             'radius_server_online' => (int)getSetting('radius_server_seen', '0') > time() - 180];
         if (self::isAdm()) $out['platform'] = Earnings::platform();
+        // the same blocks as the website's Home page: 14-day chart, quick start, monthly goal, periods, top sellers
+        $days = [];
+        for ($ci = 13; $ci >= 0; $ci--) $days[date('Y-m-d', strtotime("-$ci day"))] = ['day' => date('Y-m-d', strtotime("-$ci day")), 'mm' => 0.0, 'vc' => 0.0];
+        foreach (rows("SELECT DATE(completed_at) d, SUM(CASE WHEN payment_method='voucher' THEN amount ELSE 0 END) vc, SUM(CASE WHEN payment_method<>'voucher' THEN amount ELSE 0 END) mm
+                       FROM transactions WHERE seller_id=? AND type='purchase' AND status='completed' AND completed_at >= ? GROUP BY DATE(completed_at)", 'is', $uid, date('Y-m-d', strtotime('-13 day')) . ' 00:00:00') as $cr)
+            if (isset($days[$cr['d']])) $days[$cr['d']] = ['day' => $cr['d'], 'mm' => (float)$cr['mm'], 'vc' => (float)$cr['vc']];
+        $out['chart'] = array_values($days);
+        $devs = Device::forSeller($uid);
+        $qsProv = (bool)array_filter($devs, fn($x) => in_array((string)($x['prov_state'] ?? ''), ['done', 'ready'], true) || Device::omadaConnected($x));
+        $qsLive = (bool)array_filter($devs, fn($x) => !empty($x['last_seen']) && time() - strtotime($x['last_seen']) < 86400);
+        $out['quick_start'] = [
+            ['key' => 'router', 'label' => t('qs_router'), 'done' => (bool)$devs],
+            ['key' => 'provision', 'label' => t('qs_provision'), 'done' => $qsProv],
+            ['key' => 'package', 'label' => t('qs_package'), 'done' => $out['packages'] > 0],
+            ['key' => 'vouchers', 'label' => t('qs_vouchers'), 'done' => (int)val("SELECT COUNT(*) FROM hs_vouchers WHERE seller_id=?", 'i', $uid) > 0],
+            ['key' => 'live', 'label' => t('qs_live'), 'done' => $qsLive]];
+        try { $out['goal'] = Insights::monthProgress($uid); } catch (Throwable $e) {}
+        try { $out['periods'] = Earnings::periods($uid); } catch (Throwable $e) {}
+        try {
+            if (self::isAdm() || getSetting('top_sellers_public', '1') === '1') {
+                $ts = TopSellers::rank('month', 5);
+                $show = self::isAdm() || getSetting('top_sellers_amounts', '1') === '1';
+                $out['top_sellers'] = array_map(fn($x) => ['rank' => (int)$x['rank'], 'name' => TopSellers::name($x), 'me' => (int)$x['id'] === $uid, 'sales' => (int)$x['sales'],
+                    'routers' => (int)$x['routers'], 'total' => $show || (int)$x['id'] === $uid ? (float)$x['total'] : null], $ts['list']);
+            }
+        } catch (Throwable $e) {}
         return $out;
     }
     static function earnings(): array

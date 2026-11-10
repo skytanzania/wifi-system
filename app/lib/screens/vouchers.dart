@@ -1,5 +1,6 @@
 // Vouchers: list, generate, details (QR), block / delete, batches + printing
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../api.dart';
@@ -15,85 +16,183 @@ class VouchersTab extends StatefulWidget {
   State<VouchersTab> createState() => _VouchersTabState();
 }
 
+/// Like the website's Vouchers page: "Generate Vouchers" card, "Batch" card, then the searchable list.
 class _VouchersTabState extends State<VouchersTab> {
   String _status = 'all';
   String _q = '';
   final _k = GlobalKey<PagedListState>();
   final _search = TextEditingController();
+  final _qty = TextEditingController(text: '20');
+  List<Map<String, dynamic>> _pkgs = [];
+  List<Map<String, dynamic>> _batches = [];
+  int? _pkg;
+  bool _gen = false;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        floatingActionButton: FloatingActionButton.extended(
-          heroTag: 'genv',
-          onPressed: () => showGenerateDialog(context, then: () async => _k.currentState?.reload()),
-          icon: const Icon(Icons.add_card),
-          label: const Text('Generate'),
-        ),
-        body: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _search,
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: InputDecoration(
-                    hintText: 'Search code',
-                    prefixIcon: const Icon(Icons.search),
-                    isDense: true,
-                    suffixIcon: _q.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => setState(() {
-                              _search.clear();
-                              _q = '';
-                            }),
-                          ),
+  void initState() {
+    super.initState();
+    _loadSide();
+  }
+
+  Future<void> _loadSide() async {
+    try {
+      final p = (await Api.I.getList('packages')).map(toMap).where((p) => toBool(p['is_active'])).toList();
+      final b = (await Api.I.getList('vouchers/batches')).map(toMap).toList();
+      if (!mounted) return;
+      setState(() {
+        _pkgs = p;
+        _batches = b;
+        if (_pkg == null || !_pkgs.any((x) => toInt(x['id']) == _pkg)) _pkg = _pkgs.isEmpty ? null : toInt(_pkgs.first['id']);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _reload() async {
+    await _loadSide();
+    await _k.currentState?.reload();
+  }
+
+  Future<void> _generate() async {
+    if (_pkg == null) {
+      showMessage(context, 'Create a package first (menu → Packages).', type: 'warning');
+      return;
+    }
+    setState(() => _gen = true);
+    final r = await runAction(context, 'vouchers/generate', {'package_id': _pkg, 'quantity': toInt(_qty.text, 20)}, popup: false);
+    if (mounted) setState(() => _gen = false);
+    if (r == null || !mounted) return;
+    if (!r.ok) {
+      showMessage(context, r.message, type: r.type);
+      return;
+    }
+    await _reload();
+    if (!mounted) return;
+    final batch = toStr(r.params['batch']);
+    final doPrint = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.check_circle_rounded, color: C.green, size: 48),
+        content: Text(r.message.replaceAll(' — Print', ''), textAlign: TextAlign.center),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Close')),
+          FilledButton.icon(onPressed: () => Navigator.pop(ctx, true), icon: const Icon(Icons.print), label: const Text('Print')),
+        ],
+      ),
+    );
+    if (doPrint == true && mounted && batch.isNotEmpty) openPrint(context, batch);
+  }
+
+  @override
+  Widget build(BuildContext context) => PagedList(
+        key: _k,
+        route: 'vouchers',
+        query: {'status': _status == 'all' ? '' : _status, 'q': _q},
+        empty: 'No vouchers here.',
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 110),
+        header: (ctx, extra, reload) {
+          final c = toMap(extra['counts']);
+          return [
+            WebCard(
+              title: 'Generate Vouchers',
+              icon: FontAwesomeIcons.ticket,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    flex: 3,
+                    child: labeled(
+                      'Package',
+                      DropdownButtonFormField<int>(
+                        key: ValueKey('pk${_pkgs.length}'),
+                        initialValue: _pkg,
+                        isExpanded: true,
+                        hint: const Text('No package yet'),
+                        items: [for (final p in _pkgs) DropdownMenuItem(value: toInt(p['id']), child: Text('${toStr(p['name'])} — ${money(p['price'])}', overflow: TextOverflow.ellipsis))],
+                        onChanged: (v) => setState(() => _pkg = v),
+                      ),
+                    ),
                   ),
-                  onSubmitted: (v) => setState(() => _q = v.trim()),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton.filledTonal(
-                tooltip: 'Batches & printing',
-                icon: const Icon(Icons.print_outlined),
-                onPressed: () => push(context, const BatchesScreen()),
-              ),
-            ]),
-          ),
-          SizedBox(
-            height: 46,
-            child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), children: [
-              for (final s in _statuses)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ChoiceChip(label: Text(cap(s)), selected: _status == s, onSelected: (_) => setState(() => _status = s)),
-                ),
-            ]),
-          ),
-          Expanded(
-            child: PagedList(
-              key: _k,
-              route: 'vouchers',
-              query: {'status': _status == 'all' ? '' : _status, 'q': _q},
-              empty: 'No vouchers. Tap "Generate".',
-              header: (ctx, extra, reload) {
-                final c = toMap(extra['counts']);
-                if (c.isEmpty) return const <Widget>[];
-                return [
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Wrap(spacing: 8, runSpacing: 6, children: [
-                      for (final e in c.entries) StatusChip(e.key, label: '${cap(e.key)}: ${toInt(e.value)}'),
-                    ]),
-                  ),
-                ];
-              },
-              item: (ctx, v, reload) => VoucherTile(v, onChanged: reload),
+                  const SizedBox(width: 10),
+                  Expanded(flex: 2, child: labeled('Quantity', TextField(controller: _qty, keyboardType: TextInputType.number))),
+                ]),
+                GradButton(onPressed: _generate, busy: _gen, green: true, icon: Icons.auto_fix_high, label: 'Generate'),
+              ]),
             ),
-          ),
-        ]),
+            if (_batches.isNotEmpty)
+              WebCard(
+                title: 'Batch',
+                icon: FontAwesomeIcons.boxesStacked,
+                trailing: TextButton(onPressed: () => push(ctx, const BatchesScreen()), child: const Text('All')),
+                padding: const EdgeInsets.fromLTRB(14, 4, 10, 4),
+                child: Column(children: [
+                  for (final b in _batches.take(4))
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: C.line))),
+                      child: Row(children: [
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(toStr(b['batch']), style: mono(size: 12.5, color: const Color(0xFF7FA4FF), weight: FontWeight.w500)),
+                            Text('${toInt(b['unused'])}/${toInt(b['n'])} • ${fmtDate(b['created_at'])}', style: TextStyle(color: C.muted, fontSize: 12)),
+                          ]),
+                        ),
+                        IconBtn(FontAwesomeIcons.print, tooltip: 'Print', onTap: () => openPrint(ctx, toStr(b['batch']))),
+                        const SizedBox(width: 6),
+                        IconBtn(FontAwesomeIcons.solidTrashCan, color: C.red, tooltip: 'Delete unused', onTap: () async {
+                          if (!await confirm(ctx, 'Delete batch', 'Delete the unused vouchers of ${toStr(b['batch'])}?', ok: 'Delete', danger: true)) return;
+                          await runAction(ctx, 'vouchers/delete_batch', {'batch': toStr(b['batch'])});
+                          _reload();
+                        }),
+                      ]),
+                    ),
+                ]),
+              ),
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: C.card, borderRadius: BorderRadius.circular(18), border: Border.all(color: C.line)),
+              child: Column(children: [
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _search,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: InputDecoration(
+                        hintText: 'Search',
+                        suffixIcon: _q.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () => setState(() {
+                                  _search.clear();
+                                  _q = '';
+                                }),
+                              ),
+                      ),
+                      onSubmitted: (v) => setState(() => _q = v.trim()),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _status,
+                      isExpanded: true,
+                      items: [for (final s in _statuses) DropdownMenuItem(value: s, child: Text(s == 'all' ? 'All' : cap(s)))],
+                      onChanged: (v) => setState(() => _status = v ?? 'all'),
+                    ),
+                  ),
+                ]),
+                if (c.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(spacing: 6, runSpacing: 6, children: [for (final e in c.entries) StatusChip(e.key, label: '${cap(e.key)}: ${toInt(e.value)}')]),
+                  ),
+                ],
+              ]),
+            ),
+          ];
+        },
+        item: (ctx, v, reload) => VoucherTile(v, onChanged: _reload),
       );
 }
 
@@ -115,10 +214,10 @@ class VoucherTile extends StatelessWidget {
       child: Row(children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(toStr(v['code']), style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w900, fontSize: 17, letterSpacing: 1.5)),
+            Text(toStr(v['code']), style: const TextStyle(fontFamily: kMono, fontWeight: FontWeight.w900, fontSize: 17, letterSpacing: 1.5)),
             const SizedBox(height: 3),
             Text('${toStr(v['package_name'], fmtMinutes(v['duration_minutes']))} • ${money(v['price'])}${toInt(v['macs']) > 0 ? ' • ${toInt(v['macs'])} device(s)' : ''}',
-                style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                style: TextStyle(color: C.muted, fontSize: 12.5)),
             if (rem != null) Text('${fmtSecs(rem)} left', style: const TextStyle(color: C.green, fontSize: 12.5, fontWeight: FontWeight.w700)),
           ]),
         ),
@@ -217,8 +316,9 @@ class _VoucherDetailScreenState extends State<VoucherDetailScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Voucher')),
+        appBar: skyBar('Voucher'),
         body: AsyncPage<Map<String, dynamic>>(
+          skeleton: const SkeletonDetail(),
           key: _k,
           load: () => Api.I.getMap('vouchers/get', {'id': widget.id}),
           build: (ctx, v, reload) {
@@ -234,7 +334,7 @@ class _VoucherDetailScreenState extends State<VoucherDetailScreen> {
                     child: QrImageView(data: toStr(v['qr_url'], code), size: 180, backgroundColor: Colors.white),
                   ),
                   const SizedBox(height: 14),
-                  SelectableText(code, style: const TextStyle(fontFamily: 'monospace', fontSize: 28, fontWeight: FontWeight.w900, letterSpacing: 3)),
+                  SelectableText(code, style: const TextStyle(fontFamily: kMono, fontSize: 28, fontWeight: FontWeight.w900, letterSpacing: 3)),
                   const SizedBox(height: 6),
                   StatusChip(st),
                   const SizedBox(height: 12),
@@ -302,7 +402,7 @@ class _VoucherDetailScreenState extends State<VoucherDetailScreen> {
               if (toList(v['devices']).isNotEmpty) ...[
                 const SectionTitle('Devices'),
                 for (final m in toList(v['devices']).map(toMap))
-                  ListTile(leading: const Icon(Icons.smartphone), title: Text(toStr(m['mac']), style: const TextStyle(fontFamily: 'monospace')), subtitle: Text('Last seen ${fmtDate(m['last_seen'])}')),
+                  ListTile(leading: const Icon(Icons.smartphone), title: Text(toStr(m['mac']), style: const TextStyle(fontFamily: kMono)), subtitle: Text('Last seen ${fmtDate(m['last_seen'])}')),
               ],
               if (toList(v['sessions']).isNotEmpty) ...[
                 const SectionTitle('Sessions'),
@@ -338,7 +438,7 @@ class _BatchesScreenState extends State<BatchesScreen> {
   final _k = GlobalKey<AsyncPageState<List<dynamic>>>();
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Batches & printing'), actions: [
+        appBar: skyBar('Batches & printing', actions: [
           IconButton(
             tooltip: 'WiFi posters',
             icon: const Icon(Icons.image_outlined),
@@ -356,7 +456,7 @@ class _BatchesScreenState extends State<BatchesScreen> {
           key: _k,
           load: () => Api.I.getList('vouchers/batches'),
           build: (ctx, list, reload) => [
-            const Text('Printed vouchers are in Kiswahili. To print on paper or save as PDF, open the page and tap "Open in browser".', style: TextStyle(color: C.muted, fontSize: 12.5)),
+            Text('Printed vouchers are in Kiswahili. To print on paper or save as PDF, open the page and tap "Open in browser".', style: TextStyle(color: C.muted, fontSize: 12.5)),
             const SizedBox(height: 12),
             if (list.isEmpty) const EmptyView('No batches yet.'),
             for (final b in list.map(toMap))
@@ -367,8 +467,8 @@ class _BatchesScreenState extends State<BatchesScreen> {
                   child: Row(children: [
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(toStr(b['batch']), style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w800)),
-                        Text('${toStr(b['package_name'], '—')} • ${money(b['price'])}', style: const TextStyle(color: C.muted, fontSize: 12.5)),
+                        Text(toStr(b['batch']), style: const TextStyle(fontFamily: kMono, fontWeight: FontWeight.w800)),
+                        Text('${toStr(b['package_name'], '—')} • ${money(b['price'])}', style: TextStyle(color: C.muted, fontSize: 12.5)),
                         Text('${toInt(b['unused'])} unused of ${toInt(b['n'])} • ${fmtDate(b['created_at'])}', style: const TextStyle(fontSize: 12.5)),
                       ]),
                     ),

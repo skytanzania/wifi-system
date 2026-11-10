@@ -24,11 +24,7 @@ class Session {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: C.card,
-  ));
+  await ThemeCtl.load();
   await Api.I.init();
   Api.I.onUnauthorized = () => goTo(const LoginScreen());
   Api.I.onLocked = (home) {
@@ -45,12 +41,23 @@ void goTo(Widget w) {
 class SkyApp extends StatelessWidget {
   const SkyApp({super.key});
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'SKY WIFI',
-        debugShowCheckedModeBanner: false,
-        navigatorKey: navKey,
-        theme: skyTheme(),
-        home: const BootScreen(),
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+        valueListenable: ThemeCtl.mode,
+        builder: (_, dark, __) {
+          SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+            systemNavigationBarColor: C.bg,
+            systemNavigationBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+          ));
+          return MaterialApp(
+            title: 'SKY WIFI',
+            debugShowCheckedModeBanner: false,
+            navigatorKey: navKey,
+            theme: skyTheme(),
+            home: const BootScreen(),
+          );
+        },
       );
 }
 
@@ -96,7 +103,7 @@ class _BootScreenState extends State<BootScreen> {
             const SizedBox(height: 22),
             const Text('SKY WIFI TANZANIA', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: .5)),
             const SizedBox(height: 6),
-            const Text('Hotspot seller app', style: TextStyle(color: C.muted)),
+            Text('WiFi Seller Platform', style: TextStyle(color: C.muted)),
             const SizedBox(height: 30),
             if (_err == null)
               const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.6, color: C.brand))

@@ -52,3 +52,7 @@ flutter:
           weight: 700
         - asset: fonts/JetBrainsMono_800ExtraBold.ttf
           weight: 800
+
+# image 4.6+ needs a newer "archive" than the one pdf/printing allow (build error "decodeLazy isn't defined").
+dependency_overrides:
+  image: ">=4.2.0 <4.6.0"

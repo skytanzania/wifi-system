@@ -58,7 +58,9 @@ Live routes (marked **live**) return the website's live JSON as-is, plus `ok`
 | `info` | GET | – | name, versions, currency, logo_url, portal_url, registration_open, features |
 | `privacy` | GET | – | version, text, html (show at registration) |
 | `auth/login` | POST | `username` (username / email / phone), `password`, `device_name`, `platform` | `token`, `expires_at`, `user` |
-| `auth/register` | POST | `full_name`, `username`, `email`, `phone`, `password` (≥6), `privacy_accept: true`, `device_name` | `token`, `user` |
+| `auth/register` | POST | `full_name`, `username`, `email`, `phone`, `password` (≥6), `privacy_accept: true`, `device_name` | **v1.2** with e-mail verification on (default): `verify_required: true`, `signup_token`, `email` (masked), `resend_in` — no account yet. Without verification: `token`, `user` |
+| `auth/register/verify` | POST | `signup_token`, `code` (6 digits from the e-mail), `device_name` | **v1.2** creates the account → `token`, `user`. Errors: `wrong_code` (tries left in message), `signup_expired` (start again) |
+| `auth/register/resend` | POST | `signup_token` | **v1.2** new code (after 60 s, max 5) → `resend_in` |
 | `auth/forgot` | POST | `who` (username / email / phone) | reset link sent by e-mail / SMS |
 | `auth/logout` 🔓 | POST | – | signs out this device |
 | `auth/logout_all` 🔓 | POST | – | signs out every device |

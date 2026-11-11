@@ -1,3 +1,4 @@
+import 'dart:async';
 // Sign in, create account, forgot password
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -210,6 +211,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'device_name': await deviceName(),
         'platform': 'android',
       });
+      // e-mail verification: the account is created only after the 6-digit code from the e-mail
+      if (d['verify_required'] == true) {
+        if (!mounted) return;
+        showMessage(context, toStr(d['message'], 'Verification code sent.'), type: 'success');
+        await Navigator.push(
+            context, MaterialPageRoute(builder: (_) => VerifyEmailScreen(token: toStr(d['signup_token']), email: toStr(d['email']), resendIn: toInt(d['resend_in']))));
+        return;
+      }
       await Api.I.saveToken(toStr(d['token']));
       final me = await Session.refresh();
       enterApp(me);
@@ -245,6 +254,120 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: 10),
           GradButton(onPressed: _go, busy: _busy, icon: Icons.person_add_alt_1, label: 'Create account'),
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('I already have an account')),
+        ],
+      );
+}
+
+/// Step 2 of registration: the 6-digit code from the e-mail. The account is created only when the code is correct.
+class VerifyEmailScreen extends StatefulWidget {
+  final String token;
+  final String email;
+  final int resendIn;
+  const VerifyEmailScreen({super.key, required this.token, required this.email, this.resendIn = 60});
+  @override
+  State<VerifyEmailScreen> createState() => _VerifyEmailScreenState();
+}
+
+class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
+  final _code = TextEditingController();
+  bool _busy = false;
+  int _wait = 0;
+  Timer? _t;
+
+  @override
+  void initState() {
+    super.initState();
+    _startWait(widget.resendIn);
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  void _startWait(int s) {
+    _t?.cancel();
+    setState(() => _wait = s);
+    if (s <= 0) return;
+    _t = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return t.cancel();
+      setState(() => _wait--);
+      if (_wait <= 0) t.cancel();
+    });
+  }
+
+  Future<void> _verify() async {
+    final c = _code.text.replaceAll(RegExp(r'\D'), '');
+    if (c.length != 6) {
+      showMessage(context, 'Enter the 6-digit code from the e-mail.', type: 'warning');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final d = await Api.I.postData('auth/register/verify', {
+        'signup_token': widget.token,
+        'code': c,
+        'device_name': await deviceName(),
+        'platform': 'android',
+      });
+      await Api.I.saveToken(toStr(d['token']));
+      final me = await Session.refresh();
+      enterApp(me);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showMessage(context, e.message, type: 'error');
+      if (e.code == 'signup_expired') Navigator.pop(context);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _resend() async {
+    try {
+      final d = await Api.I.postData('auth/register/resend', {'signup_token': widget.token});
+      if (!mounted) return;
+      showMessage(context, toStr(d['message'], 'New code sent.'), type: 'success');
+      _startWait(toInt(d['resend_in'], 60));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showMessage(context, e.message, type: 'error');
+      if (e.code == 'signup_expired') Navigator.pop(context);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AuthFrame(
+        title: 'Verify your e-mail',
+        subtitle: 'Enter the 6-digit code we sent to ${widget.email}. Your account is created when the code is correct.',
+        children: [
+          TextField(
+            controller: _code,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            textAlign: TextAlign.center,
+            autofillHints: const [AutofillHints.oneTimeCode],
+            style: const TextStyle(fontFamily: kMono, fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: 12),
+            decoration: const InputDecoration(counterText: '', hintText: '••••••'),
+            onSubmitted: (_) => _verify(),
+          ),
+          const SizedBox(height: 14),
+          GradButton(onPressed: _verify, busy: _busy, icon: Icons.verified_outlined, label: 'Verify & create account'),
+          const SizedBox(height: 6),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            TextButton.icon(
+              onPressed: _wait > 0 ? null : _resend,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: Text(_wait > 0 ? 'New code (${_wait}s)' : 'Send a new code'),
+            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Change details')),
+          ]),
+          Text('No e-mail? Check Spam / Promotions. The code is valid for 15 minutes.', textAlign: TextAlign.center, style: TextStyle(color: C.muted, fontSize: 12)),
         ],
       );
 }

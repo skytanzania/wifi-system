@@ -6,7 +6,9 @@
  *  v1.1 (index.php v9.7): routers/omada + routers/omada_sync (RADIUS server / profile / portal → Omada), sessions/speed (speed of one
  *        user), package fair usage (fup_mb, fup_down_mbps, fup_up_mbps), export/report_pdf (report as PDF), admin/sms_after_sale(+/save),
  *        admin/radius_servers.
- *  Put this file next to index.php (index.php v9.7 or newer) and config.local.php. Nothing else is needed:
+ *  v1.2 (index.php v9.8): e-mail verification at registration — auth/register answers verify_required + signup_token, then
+ *        auth/register/verify {signup_token, code} creates the account and returns the token; auth/register/resend sends a new code.
+ *  Put this file next to index.php (index.php v9.8 or newer) and config.local.php. Nothing else is needed:
  *  the API uses index.php as its engine (database, classes, Omada / Ruijie / Cudy, RADIUS, Sonic Pesa, SMS, e-mail),
  *  so every write goes through exactly the same code as the website — same checks, same results.
  *
@@ -29,7 +31,7 @@
  *  Optional in config.local.php:  define('SKY_API_TOKEN_DAYS', '90');   define('SKY_API_CORS', '*');
  * ============================================================================
  */
-define('SKY_API', '1.1');
+define('SKY_API', '1.2');
 
 // ---------- CORS (a web build of the app may call the API from another origin; tokens are never cookies) ----------
 $__apiOrigin = defined('SKY_API_CORS') ? (string)SKY_API_CORS : '*';
@@ -144,6 +146,8 @@ final class SkyApi
             'privacy'                => ['GET', 'public', fn() => self::privacy(), true],
             'auth/login'             => ['POST', 'public', fn() => self::login(), true],
             'auth/register'          => ['POST', 'public', fn() => self::register(), true],
+            'auth/register/verify'   => ['POST', 'public', fn() => self::registerVerify(), true],   // v1.2 — e-mail code
+            'auth/register/resend'   => ['POST', 'public', fn() => self::registerResend(), true],
             'auth/forgot'            => ['POST', 'public', fn() => self::forgot(), true],
             // ----- every signed-in user -----
             'auth/logout'            => ['POST', 'user', fn() => self::logout(), true],
@@ -636,11 +640,35 @@ final class SkyApi
         if (!filter_var($d['email'], FILTER_VALIDATE_EMAIL)) self::fail('Invalid email', 422, 'invalid_email');
         if (empty(self::$in['privacy_accept'])) self::fail(t('privacy_must_accept'), 422, 'privacy_required');
         if (!rateLimitCheck(clientIp(), 'register', 5, 3600)) self::fail(t('rate_limited'), 429, 'rate_limited');
+        if (SignupVerify::enabled()) {   // v1.2 — no account yet: the 6-digit code is e-mailed, auth/register/verify creates it
+            $st = SignupVerify::start($d, 'app');
+            if (!$st['ok']) self::fail((string)$st['msg'], 409, 'signup_failed');
+            return ['verify_required' => true, 'signup_token' => $st['token'], 'email' => $st['email'], 'resend_in' => SignupVerify::COOLDOWN, 'message' => $st['msg']];
+        }
+        return self::createAccount($d);
+    }
+    static function registerVerify(): array
+    {
+        if (!rateLimitCheck(clientIp(), 'register_code', 20, 900)) self::fail(t('rate_limited'), 429, 'rate_limited');
+        $vr = SignupVerify::verify(self::str('signup_token', '', 64), self::str('code', '', 10));
+        if (!$vr['ok']) self::fail((string)$vr['msg'], 422, !empty($vr['expired']) ? 'signup_expired' : 'wrong_code');
+        return self::createAccount($vr['data']);
+    }
+    static function registerResend(): array
+    {
+        $rs = SignupVerify::resend(self::str('signup_token', '', 64));
+        if (!$rs['ok']) self::fail((string)$rs['msg'], !empty($rs['expired']) ? 410 : 429, !empty($rs['expired']) ? 'signup_expired' : 'resend_wait');
+        return ['sent' => true, 'resend_in' => SignupVerify::COOLDOWN, 'message' => $rs['msg']];
+    }
+    /** creates the seller account (after the e-mail code when verification is on) and signs the app in */
+    private static function createAccount(array $d): array
+    {
         $r = $GLOBALS['auth']->register($d);
         if (empty($r['success'])) self::fail((string)$r['message'], 409, 'exists');
         $uid = (int)($_SESSION['user_id'] ?? 0);
         Privacy::accept($uid);
         logActivity($uid, 'privacy_accept', 'Privacy Policy ' . Privacy::version() . ' (register, mobile app)');
+        if (!empty($d['password_hash'])) logActivity($uid, 'email_verified', 'E-mail verified at registration (mobile app): ' . $d['email']);
         try { Mailer::queue($d['email'], sprintf(t('em_welcome_subject'), SITE_NAME), Mailer::layout(sprintf(t('em_welcome_subject'), SITE_NAME), sprintf(t('em_welcome_body'), h($d['full_name']), h($d['username'])), appUrl() . '/index.php?page=routers&add=1', t('add_router')), $uid); } catch (Throwable $e) {}
         $u = row("SELECT * FROM users WHERE id=?", 'i', $uid);
         self::signIn($u);

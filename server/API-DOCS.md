@@ -3,6 +3,11 @@
 `api.php` sits next to `index.php` (v9.6+) and `config.local.php`. It uses `index.php` as its engine, so every
 action runs exactly the same code as the website (same checks, Omada / Ruijie / Cudy, RADIUS, Sonic Pesa, SMS).
 
+> **Token not received?** Some hostings remove the `Authorization` header before PHP runs. api.php also reads `X-Api-Token` and
+> renamed headers, and the app automatically switches to `?token=…` when the server answers `no_token` although it is signed in.
+> To keep the header on Apache, add to `.htaccess`: `CGIPassAuth On` (Apache 2.4.13+) or
+> `RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]`.
+
 ## 1. Basics
 
 | | |

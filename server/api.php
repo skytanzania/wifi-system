@@ -6,6 +6,8 @@
  *  v1.1 (index.php v9.7): routers/omada + routers/omada_sync (RADIUS server / profile / portal → Omada), sessions/speed (speed of one
  *        user), package fair usage (fup_mb, fup_down_mbps, fup_up_mbps), export/report_pdf (report as PDF), admin/sms_after_sale(+/save),
  *        admin/radius_servers.
+ *  v1.2.1: the token is also read from every renamed header (REDIRECT_…, getallheaders / apache_request_headers); the app falls back to
+ *        ?token=… when a hosting removes the Authorization header ("Sign in first" although signed in).
  *  v1.2 (index.php v9.8): e-mail verification at registration — auth/register answers verify_required + signup_token, then
  *        auth/register/verify {signup_token, code} creates the account and returns the token; auth/register/resend sends a new code.
  *  Put this file next to index.php (index.php v9.8 or newer) and config.local.php. Nothing else is needed:
@@ -31,7 +33,7 @@
  *  Optional in config.local.php:  define('SKY_API_TOKEN_DAYS', '90');   define('SKY_API_CORS', '*');
  * ============================================================================
  */
-define('SKY_API', '1.2');
+define('SKY_API', '1.2.1');
 
 // ---------- CORS (a web build of the app may call the API from another origin; tokens are never cookies) ----------
 $__apiOrigin = defined('SKY_API_CORS') ? (string)SKY_API_CORS : '*';
@@ -412,10 +414,15 @@ final class SkyApi
     }
     static function bearer(): string
     {
-        $h = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? ''));
-        if ($h === '' && function_exists('getallheaders')) foreach ((array)getallheaders() as $k => $v) if (strcasecmp((string)$k, 'Authorization') === 0) $h = (string)$v;
+        // v1.2.1 — every place a hosting may put the header (CGI / FastCGI / LiteSpeed / rewrites remove or rename it)
+        $h = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_REDIRECT_HTTP_AUTHORIZATION'] ?? '')));
+        $hdrs = function_exists('getallheaders') ? (array)getallheaders() : (function_exists('apache_request_headers') ? (array)apache_request_headers() : []);
+        $x = (string)($_SERVER['HTTP_X_API_TOKEN'] ?? ($_SERVER['HTTP_X_AUTH_TOKEN'] ?? ($_SERVER['REDIRECT_HTTP_X_API_TOKEN'] ?? '')));
+        foreach ($hdrs as $k => $v) {
+            if ($h === '' && strcasecmp((string)$k, 'Authorization') === 0) $h = (string)$v;
+            if ($x === '' && (strcasecmp((string)$k, 'X-Api-Token') === 0 || strcasecmp((string)$k, 'X-Auth-Token') === 0)) $x = (string)$v;
+        }
         if (preg_match('/^\s*Bearer\s+(\S+)/i', $h, $m)) return $m[1];
-        $x = (string)($_SERVER['HTTP_X_API_TOKEN'] ?? ($_SERVER['HTTP_X_AUTH_TOKEN'] ?? ''));
         if ($x !== '') return trim($x);
         return is_scalar(self::$in['token'] ?? null) ? trim((string)self::$in['token']) : '';
     }
@@ -439,7 +446,7 @@ final class SkyApi
     static function auth(string $who, bool $lockedOk): void
     {
         $tok = self::bearer();
-        if ($tok === '') self::fail('Sign in first (Authorization: Bearer TOKEN).', 401, 'no_token');
+        if ($tok === '') self::fail('Sign in first.', 401, 'no_token');   // v1.2.1: plain message (the app retries with ?token= when its header was removed)
         $u = self::tokenRow($tok);
         if (!$u) self::fail('Token is invalid or expired — sign in again.', 401, 'invalid_token');
         if ($u['status'] !== 'active') self::fail('This account is not active.', 403, 'account_inactive');

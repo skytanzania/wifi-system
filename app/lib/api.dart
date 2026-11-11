@@ -65,6 +65,11 @@ class Api {
   String base = kDefaultApi;
   String? token;
 
+  /// Some hostings remove the Authorization / X-Api-Token headers before PHP sees them (the server then answers
+  /// "Sign in first (Authorization: Bearer TOKEN)" although the app is signed in). When that happens once, the token
+  /// is also sent in the address (?token=…) from then on — remembered on the phone.
+  bool tokenInQuery = false;
+
   /// Called when the token is no longer valid (→ sign-in screen).
   void Function()? onUnauthorized;
 
@@ -75,6 +80,7 @@ class Api {
     try {
       final p = await SharedPreferences.getInstance();
       base = p.getString('api_base') ?? kDefaultApi;
+      tokenInQuery = p.getBool('token_in_query') ?? false;
     } catch (_) {}
     try {
       token = await _secure.read(key: 'token');
@@ -104,6 +110,7 @@ class Api {
   Uri uri(String route, [Map<String, dynamic>? q]) {
     final u = Uri.parse(base);
     final params = <String, String>{...u.queryParameters, 'r': route};
+    if (tokenInQuery && token != null) params['token'] = token!;
     q?.forEach((k, v) {
       if (v != null && '$v'.isNotEmpty) params[k] = '$v';
     });
@@ -158,6 +165,17 @@ class Api {
         if (token != null) 'X-Api-Token': token!,
       };
 
+  /// The server did not receive the token in the headers → send it in the address from now on.
+  Future<bool> _switchToQueryToken() async {
+    if (tokenInQuery || token == null) return false;
+    tokenInQuery = true;
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool('token_in_query', true);
+    } catch (_) {}
+    return true;
+  }
+
   Future<Map<String, dynamic>> _send(String route, Future<http.Response> Function() call) async {
     http.Response r;
     try {
@@ -183,6 +201,8 @@ class Api {
     }
     final msg = (j['message'] is String ? j['message'] as String : null) ?? 'Something went wrong (HTTP ${r.statusCode}).';
     if (r.statusCode == 401 && !route.startsWith('auth/login') && !route.startsWith('auth/register')) {
+      // headers removed by the hosting: try again with the token in the address (once), before signing the user out
+      if ((j['error'] ?? '').toString() == 'no_token' && await _switchToQueryToken()) return _send(route, call);
       if (token != null) {
         await saveToken(null);
         onUnauthorized?.call();
@@ -218,6 +238,7 @@ class Api {
     }
     final ct = (r.headers['content-type'] ?? '').toLowerCase();
     if (r.statusCode == 200 && !ct.contains('json') && !ct.contains('text/html')) return r.bodyBytes;
+    if (r.statusCode == 401 && utf8.decode(r.bodyBytes, allowMalformed: true).contains('no_token') && await _switchToQueryToken()) return bytes(route, q);
     String msg = 'Could not download the file (HTTP ${r.statusCode}).';
     try {
       final j = jsonDecode(utf8.decode(r.bodyBytes));
